@@ -1,0 +1,874 @@
+#!/usr/bin/env python3
+
+"""
+Arm Controller API for Mobile ALOHA
+Provides flexible arm control with automatic format detection and conversion
+Designed for integration with Gemini Live API
+"""
+
+import time
+import threading
+import math
+from enum import Enum
+from typing import Dict, List, Optional, Tuple, Union
+import numpy as np
+
+from aloha.robot_utils import move_arms, torque_on
+from aloha.constants import START_ARM_POSE
+from interbotix_common_modules.common_robot.robot import (
+    create_interbotix_global_node,
+    robot_shutdown,
+    robot_startup,
+)
+from interbotix_xs_modules.xs_robot.arm import InterbotixManipulatorXS
+
+# Import safety validator
+try:
+    from safety_validator import SafetyValidator, RiskLevel
+    SAFETY_ENABLED = True
+except ImportError:
+    print("[ArmController] Warning: Safety validator not available")
+    SAFETY_ENABLED = False
+
+
+class ArmState(Enum):
+    """Arm states for status tracking"""
+    IDLE = "idle"
+    MOVING = "moving"
+    AT_HOME = "at_home"
+    AT_SLEEP = "at_sleep"
+    AT_TARGET = "at_target"
+    ERROR = "error"
+    UNKNOWN = "unknown"
+
+
+class ArmController:
+    """
+    Main API class for controlling the Mobile ALOHA arm.
+    Supports multiple input formats with automatic detection and conversion.
+    
+    Features:
+    - Joint space control (radians or degrees)
+    - Cartesian space control (x, y, z, roll, pitch, yaw)
+    - Named poses (home, sleep, ready)
+    - Automatic unit detection
+    - Safe workspace limits
+    """
+    
+    # Standard poses (in radians)
+    POSES = {
+        'home': [0.0, -0.3, 0.6, 0.0, -0.3, 0.0],  # More centered, moderate position
+        'sleep': [0.0, -1.85, 1.55, 0.0, -1.57, 0.0],
+        'ready': [0.0, -0.96, 1.16, 0.0, -0.3, 0.0],  # START_ARM_POSE[:6]
+    }
+    
+    # Workspace limits (meters)
+    WORKSPACE = {
+        'x': (-0.5, 0.5),
+        'y': (-0.5, 0.5),
+        'z': (0.1, 0.6),  # Minimum z=0.1m to stay above table
+    }
+    
+    # Safety constraints to prevent self-collision
+    SAFETY_CONSTRAINTS = {
+        # If end effector is close to base (x < threshold), limit wrist rotation
+        'close_to_base_x_threshold': 0.15,  # meters
+        'close_to_base_y_threshold': 0.10,  # meters
+        'wrist_rotate_limit_when_close': math.radians(30),  # Max ±30° when close to base
+        
+        # Dangerous joint combinations to avoid
+        'min_shoulder_angle': math.radians(-110),  # Don't fold too far back
+        'max_elbow_angle': math.radians(100),      # Don't over-extend elbow
+        
+        # When gripper is pointing down and close to base, restrict rotation
+        'wrist_angle_down_threshold': math.radians(-45),  # Wrist pointing down
+        'safe_distance_from_base': 0.25,  # meters - minimum safe distance for full rotation
+        
+        # Additional constraints for low z positions
+        'low_z_threshold': 0.15,  # meters - when gripper is low
+        'wrist_rotate_limit_when_low': math.radians(45),  # Max rotation when low
+    }
+    
+    def __init__(self, robot_model='vx300s', robot_name='follower_left', node=None, bot=None,
+                 enable_safety=True, dry_run=False):
+        """Initialize controller (does not connect to robot yet)
+        
+        Args:
+            robot_model: Robot model name
+            robot_name: Robot instance name
+            node: Optional ROS node to share
+            bot: Optional bot instance to share
+            enable_safety: Enable safety validation
+            dry_run: If True, validate but don't execute movements
+        """
+        self.robot_model = robot_model
+        self.robot_name = robot_name
+        self.bot = bot  # Can share existing bot
+        self.node = node  # Can share existing node
+        self.initialized = False
+        self.current_state = ArmState.UNKNOWN
+        self.current_joints = [0.0] * 6
+        self.current_ee_pose = None
+        self.state_lock = threading.Lock()
+        self.dry_run = dry_run
+        
+        # Movement parameters
+        self.default_moving_time = 2.0
+        self.default_accel_time = 0.3
+        
+        # Initialize safety validator
+        self.safety_enabled = enable_safety and SAFETY_ENABLED
+        if self.safety_enabled:
+            self.safety_validator = SafetyValidator(safety_profile="strict")
+            print(f"[ArmController] Safety validator enabled (dry_run={dry_run})")
+        else:
+            self.safety_validator = None
+            if enable_safety and not SAFETY_ENABLED:
+                print("[ArmController] Safety requested but validator not available")
+        
+    def initialize(self) -> bool:
+        """
+        Initialize robot connection and move to ready position.
+        Returns True if successful, False otherwise.
+        """
+        try:
+            print("[ArmController] Initializing robot connection...")
+            
+            # If bot not provided, create new one
+            if self.bot is None:
+                # Create ROS node if not provided
+                if self.node is None:
+                    self.node = create_interbotix_global_node('arm_controller')
+                
+                # Create robot interface
+                self.bot = InterbotixManipulatorXS(
+                    robot_model=self.robot_model,
+                    robot_name=self.robot_name,
+                    node=self.node,
+                    iterative_update_fk=True,  # Keep FK updated
+                    moving_time=self.default_moving_time,
+                    accel_time=self.default_accel_time,
+                )
+                
+                # Start ROS
+                robot_startup(self.node)
+            else:
+                print("[ArmController] Using existing robot interface")
+            
+            # Configure motors
+            print("[ArmController] Configuring motors...")
+            self.bot.core.robot_set_operating_modes('group', 'arm', 'position')
+            
+            # Enable torque
+            torque_on(self.bot)
+            
+            # Move to ready position
+            print("[ArmController] Moving to ready position...")
+            self.move_to_pose('ready', blocking=True)
+            
+            self.initialized = True
+            
+            # Start position monitoring thread
+            self._start_position_monitor()
+            
+            print("[ArmController] ✓ Initialization complete")
+            return True
+            
+        except Exception as e:
+            print(f"[ArmController] ✗ Initialization failed: {e}")
+            return False
+    
+    def _start_position_monitor(self):
+        """Start background thread to monitor arm position"""
+        def monitor():
+            while self.initialized:
+                try:
+                    # Get current joint positions
+                    with self.bot.core.js_mutex:
+                        self.current_joints = list(self.bot.arm.get_joint_commands())
+                    
+                    # Get end effector pose
+                    self.current_ee_pose = self.bot.arm.get_ee_pose()
+                    
+                except Exception:
+                    pass  # Silently ignore errors in monitor thread
+                
+                time.sleep(0.1)  # Check 10 times per second
+        
+        monitor_thread = threading.Thread(target=monitor, daemon=True)
+        monitor_thread.start()
+    
+    def check_safety_constraints(self, joint_positions: List[float], ee_position: Optional[Dict] = None) -> Tuple[bool, str]:
+        """
+        Check if joint positions are safe (no self-collision risk).
+        
+        Args:
+            joint_positions: List of 6 joint angles in radians
+            ee_position: Optional end effector position dict with x, y, z
+            
+        Returns:
+            (is_safe, warning_message)
+        """
+        if len(joint_positions) != 6:
+            return True, ""  # Skip check if invalid input
+        
+        waist, shoulder, elbow, forearm_roll, wrist_angle, wrist_rotate = joint_positions
+        
+        # Log for debugging
+        print(f"[Safety] Checking joints: wrist_rotate={math.degrees(wrist_rotate):.1f}°, "
+              f"wrist_angle={math.degrees(wrist_angle):.1f}°, shoulder={math.degrees(shoulder):.1f}°")
+        if ee_position:
+            print(f"[Safety] Position: x={ee_position.get('x', 0):.3f}, "
+                  f"y={ee_position.get('y', 0):.3f}, z={ee_position.get('z', 0):.3f}")
+        
+        # Check 1: Shoulder angle limit
+        if shoulder < self.SAFETY_CONSTRAINTS['min_shoulder_angle']:
+            return False, f"Shoulder angle too far back ({math.degrees(shoulder):.1f}°), risk of self-collision"
+        
+        # Check 2: Elbow over-extension
+        if elbow > self.SAFETY_CONSTRAINTS['max_elbow_angle']:
+            return False, f"Elbow over-extended ({math.degrees(elbow):.1f}°), risk of mechanical damage"
+        
+        # Check 3: Large wrist rotation is ALWAYS dangerous with this robot configuration
+        # The camera and cables can get damaged with large rotations
+        max_safe_rotation = math.radians(120)  # Absolute maximum safe rotation
+        if abs(wrist_rotate) > max_safe_rotation:
+            return False, (f"Wrist rotation ({math.degrees(wrist_rotate):.1f}°) exceeds safe limit. "
+                         f"Max allowed: ±{math.degrees(max_safe_rotation):.1f}°")
+        
+        # Check 4: Position-based constraints
+        if ee_position:
+            x = ee_position.get('x', 0.5)
+            y = ee_position.get('y', 0.5)
+            z = ee_position.get('z', 0.5)
+            
+            # Calculate distance from base in XY plane
+            distance_from_base = math.sqrt(x**2 + y**2)
+            
+            # Check 4a: If close to base in XY, restrict wrist rotation
+            if distance_from_base < self.SAFETY_CONSTRAINTS['safe_distance_from_base']:
+                max_rotation = self.SAFETY_CONSTRAINTS['wrist_rotate_limit_when_close']
+                if abs(wrist_rotate) > max_rotation:
+                    return False, (f"Wrist rotation ({math.degrees(wrist_rotate):.1f}°) too large "
+                                 f"when close to base (distance: {distance_from_base:.2f}m). "
+                                 f"Max allowed: ±{math.degrees(max_rotation):.1f}°")
+            
+            # Check 4b: If low to table (small z), restrict wrist rotation
+            if z <= self.SAFETY_CONSTRAINTS['low_z_threshold']:
+                max_rotation = self.SAFETY_CONSTRAINTS['wrist_rotate_limit_when_low']
+                if abs(wrist_rotate) > max_rotation:
+                    return False, (f"Wrist rotation ({math.degrees(wrist_rotate):.1f}°) too large "
+                                 f"when low to table (z={z:.2f}m). "
+                                 f"Max allowed: ±{math.degrees(max_rotation):.1f}°")
+            
+            # Check 4c: Wrist pointing down and close to base
+            if (wrist_angle < self.SAFETY_CONSTRAINTS['wrist_angle_down_threshold'] and 
+                distance_from_base < self.SAFETY_CONSTRAINTS['safe_distance_from_base']):
+                # Extra strict on rotation when pointing down near base
+                if abs(wrist_rotate) > math.radians(20):
+                    return False, (f"Wrist rotation restricted when pointing down "
+                                 f"({math.degrees(wrist_angle):.1f}°) near base. "
+                                 f"Risk of cable/camera damage")
+        
+        # Check 5: Dangerous combination - shoulder back + elbow extended + wrist rotated
+        if (shoulder < math.radians(-90) and 
+            elbow > math.radians(80) and 
+            abs(wrist_rotate) > math.radians(90)):
+            return False, "Dangerous joint combination: shoulder back + elbow extended + wrist rotated"
+        
+        # Check 6: Specific dangerous configuration when reaching forward at table level
+        # This is the configuration that was hitting the camera
+        if (ee_position and ee_position.get('z', 1.0) <= 0.15 and  # Low position
+            abs(wrist_rotate) > math.radians(60)):  # Significant rotation
+            return False, (f"Wrist rotation ({math.degrees(wrist_rotate):.1f}°) restricted "
+                         f"at low position (z={ee_position.get('z', 0):.2f}m) to prevent camera collision")
+        
+        return True, ""
+    
+    def parse_joint_angles(self, angles: List[float], unit: str = 'auto') -> List[float]:
+        """
+        Parse joint angles with automatic unit detection.
+        
+        Args:
+            angles: List of 6 joint angles
+            unit: 'auto', 'radians', or 'degrees'
+            
+        Returns:
+            List of angles in radians
+        """
+        if len(angles) != 6:
+            raise ValueError(f"Expected 6 joint angles, got {len(angles)}")
+        
+        # Auto-detect unit based on value ranges
+        if unit == 'auto':
+            # If any absolute value > 2π, likely degrees
+            if any(abs(a) > 2 * math.pi for a in angles):
+                print(f"[ArmController] Auto-detected degrees (max value: {max(abs(a) for a in angles):.2f})")
+                return [math.radians(a) for a in angles]
+            else:
+                print(f"[ArmController] Auto-detected radians (max value: {max(abs(a) for a in angles):.2f})")
+                return angles
+        elif unit == 'degrees':
+            return [math.radians(a) for a in angles]
+        else:  # radians
+            return angles
+    
+    def parse_position(self, 
+                      position: Union[List[float], Dict[str, float]], 
+                      format: str = 'auto') -> Dict[str, float]:
+        """
+        Parse position coordinates with format detection.
+        
+        Args:
+            position: List [x,y,z] or [y,x] or dict with x,y,z keys
+            format: 'auto', 'xyz', 'yx', or 'dict'
+            
+        Returns:
+            Dictionary with x, y, z in meters
+        """
+        if isinstance(position, dict):
+            # Already in dict format
+            result = {
+                'x': position.get('x', 0.0),
+                'y': position.get('y', 0.0),
+                'z': position.get('z', 0.0)
+            }
+        elif isinstance(position, (list, tuple)):
+            if len(position) == 2:
+                # Assume [y, x] format (Gemini trajectory style)
+                # Check if values are normalized (0-1000 range)
+                if any(abs(v) > 10 for v in position):
+                    # Likely normalized coordinates
+                    result = {
+                        'x': position[1] / 1000.0,
+                        'y': position[0] / 1000.0,
+                        'z': 0.0
+                    }
+                else:
+                    # Already in meters
+                    result = {
+                        'x': position[1],
+                        'y': position[0],
+                        'z': 0.0
+                    }
+            elif len(position) == 3:
+                # Standard [x, y, z] format
+                result = {'x': position[0], 'y': position[1], 'z': position[2]}
+            else:
+                raise ValueError(f"Position must have 2 or 3 elements, got {len(position)}")
+        else:
+            raise ValueError(f"Position must be list or dict, got {type(position)}")
+        
+        # Validate workspace limits
+        for axis, (min_val, max_val) in self.WORKSPACE.items():
+            if result[axis] < min_val or result[axis] > max_val:
+                print(f"[ArmController] Warning: {axis}={result[axis]:.3f} outside workspace [{min_val}, {max_val}]")
+                result[axis] = max(min_val, min(max_val, result[axis]))
+        
+        return result
+    
+    def move_joints(self, 
+                   joint_positions: List[float],
+                   unit: str = 'auto',
+                   moving_time: Optional[float] = None,
+                   blocking: bool = True) -> Dict:
+        """
+        Move arm to specified joint positions.
+        
+        Args:
+            joint_positions: List of 6 joint angles
+            unit: 'auto', 'radians', or 'degrees'
+            moving_time: Time to complete movement (seconds)
+            blocking: Wait for movement to complete
+            
+        Returns:
+            Status dictionary
+        """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+        
+        try:
+            # Parse and convert angles
+            angles_rad = self.parse_joint_angles(joint_positions, unit)
+            
+            # Safety check before movement
+            is_safe, warning = self.check_safety_constraints(angles_rad)
+            if not is_safe:
+                print(f"[ArmController] ⚠️ SAFETY WARNING: {warning}")
+                with self.state_lock:
+                    self.current_state = ArmState.ERROR
+                return {"success": False, "error": f"Safety constraint violated: {warning}", "state": "error"}
+            
+            with self.state_lock:
+                self.current_state = ArmState.MOVING
+            
+            print(f"[ArmController] Moving to joints: {[f'{a:.3f}' for a in angles_rad]}")
+            
+            # Use InterbotixArmXSInterface method
+            success = self.bot.arm.set_joint_positions(
+                angles_rad,
+                moving_time=moving_time or self.default_moving_time,
+                accel_time=self.default_accel_time,
+                blocking=blocking
+            )
+            
+            if success:
+                with self.state_lock:
+                    self.current_state = ArmState.AT_TARGET
+                    self.current_joints = angles_rad
+            else:
+                with self.state_lock:
+                    self.current_state = ArmState.ERROR
+                return {"success": False, "error": "Joint limits exceeded", "state": "error"}
+            
+            return self.get_arm_state()
+            
+        except Exception as e:
+            with self.state_lock:
+                self.current_state = ArmState.ERROR
+            return {"success": False, "error": str(e), "state": "error"}
+    
+    def move_to_position(self,
+                        position: Union[List[float], Dict[str, float]],
+                        orientation: Optional[List[float]] = None,
+                        format: str = 'auto',
+                        moving_time: Optional[float] = None,
+                        blocking: bool = True) -> Dict:
+        """
+        Move end effector to Cartesian position.
+        
+        Args:
+            position: Target position (x,y,z) or (y,x)
+            orientation: Optional (roll, pitch, yaw) in radians
+            format: Position format ('auto', 'xyz', 'yx')
+            moving_time: Time to complete movement
+            blocking: Wait for movement to complete
+            
+        Returns:
+            Status dictionary
+        """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+        
+        try:
+            # Parse position
+            pos = self.parse_position(position, format)
+            
+            # Safety validation
+            if self.safety_enabled and self.safety_validator:
+                validation = self.safety_validator.validate_position(pos['x'], pos['y'], pos['z'])
+                if not validation.valid:
+                    print(f"[ArmController] ⚠️ SAFETY: {validation.message}")
+                    return {
+                        "success": False,
+                        "error": validation.message,
+                        "state": "blocked",
+                        "safety": validation.to_dict()
+                    }
+                elif validation.risk_level == RiskLevel.NEEDS_CONFIRMATION:
+                    print(f"[ArmController] ⚠️ SAFETY WARNING: {validation.message}")
+                    # In production, you might want to require confirmation here
+                    # For now, we'll log but continue
+                
+                # If dry run mode, don't execute actual movement
+                if self.dry_run:
+                    print(f"[ArmController] DRY RUN: Would move to x={pos['x']:.3f}, y={pos['y']:.3f}, z={pos['z']:.3f}")
+                    return {
+                        "success": True,
+                        "state": "dry_run",
+                        "target_position": pos,
+                        "safety": validation.to_dict(),
+                        "message": "Dry run - movement validated but not executed"
+                    }
+            
+            # Default orientation if not provided
+            if orientation is None:
+                # Calculate yaw to face the target
+                yaw = math.atan2(pos['y'], pos['x'])
+                orientation = [0.0, 0.0, yaw]
+            
+            with self.state_lock:
+                self.current_state = ArmState.MOVING
+            
+            print(f"[ArmController] Moving to position: x={pos['x']:.3f}, y={pos['y']:.3f}, z={pos['z']:.3f}")
+            
+            # Use InterbotixArmXSInterface method to get IK solution (without executing)
+            joint_positions, success = self.bot.arm.set_ee_pose_components(
+                x=pos['x'],
+                y=pos['y'],
+                z=pos['z'],
+                roll=orientation[0],
+                pitch=orientation[1],
+                yaw=orientation[2] if len(orientation) > 2 else None,
+                execute=False,  # Just get IK solution, don't move yet
+                moving_time=moving_time or self.default_moving_time,
+                accel_time=self.default_accel_time,
+                blocking=blocking
+            )
+            
+            if success:
+                # Convert tuple to list and extract first 6 joints
+                if isinstance(joint_positions, tuple):
+                    joint_positions = list(joint_positions)
+                joint_list = joint_positions[:6] if len(joint_positions) >= 6 else joint_positions
+                
+                print(f"[ArmController] IK solution: joints={[f'{math.degrees(j):.1f}°' for j in joint_list]}")
+                
+                # Safety check the IK solution before executing
+                is_safe, warning = self.check_safety_constraints(joint_list, ee_position=pos)
+                if not is_safe:
+                    print(f"[ArmController] ⚠️ SAFETY BLOCKED: {warning}")
+                    with self.state_lock:
+                        self.current_state = ArmState.ERROR
+                    return {"success": False, "error": f"Safety: {warning}", "state": "error"}
+                
+                print(f"[ArmController] Safety check passed, executing movement")
+                
+                # Now execute the safe movement
+                joint_positions, success = self.bot.arm.set_ee_pose_components(
+                    x=pos['x'],
+                    y=pos['y'],
+                    z=pos['z'],
+                    roll=orientation[0],
+                    pitch=orientation[1],
+                    yaw=orientation[2] if len(orientation) > 2 else None,
+                    execute=True,  # Execute the movement
+                    moving_time=moving_time or self.default_moving_time,
+                    accel_time=self.default_accel_time,
+                    blocking=blocking
+                )
+                
+                with self.state_lock:
+                    self.current_state = ArmState.AT_TARGET
+                    if joint_positions is not None:
+                        self.current_joints = list(joint_positions) if isinstance(joint_positions, tuple) else joint_positions
+            else:
+                with self.state_lock:
+                    self.current_state = ArmState.ERROR
+                return {"success": False, "error": "IK solution not found", "state": "error"}
+            
+            return self.get_arm_state()
+            
+        except Exception as e:
+            with self.state_lock:
+                self.current_state = ArmState.ERROR
+            return {"success": False, "error": str(e), "state": "error"}
+    
+    def move_to_pose(self, 
+                     pose_name: str,
+                     moving_time: Optional[float] = None,
+                     blocking: bool = True) -> Dict:
+        """
+        Move to a named pose.
+        
+        Args:
+            pose_name: 'home', 'sleep', or 'ready'
+            moving_time: Time to complete movement
+            blocking: Wait for movement to complete
+            
+        Returns:
+            Status dictionary
+        """
+        if pose_name not in self.POSES:
+            return {"success": False, "error": f"Unknown pose: {pose_name}", "state": "error"}
+        
+        print(f"[ArmController] Moving to {pose_name} pose")
+        
+        # Safety check the named pose (these should always be safe, but check anyway)
+        pose_joints = self.POSES[pose_name]
+        is_safe, warning = self.check_safety_constraints(pose_joints)
+        if not is_safe:
+            print(f"[ArmController] ⚠️ WARNING: Named pose '{pose_name}' failed safety check: {warning}")
+            # Still allow named poses but log the warning
+        
+        # Update state based on target pose
+        target_state = {
+            'home': ArmState.AT_HOME,
+            'sleep': ArmState.AT_SLEEP,
+            'ready': ArmState.IDLE
+        }.get(pose_name, ArmState.AT_TARGET)
+        
+        # Use slower movement for sleep and home positions if not specified
+        if moving_time is None and pose_name in ['sleep', 'home']:
+            moving_time = 3.0  # 3 seconds for slow, safe transition
+            print(f"[ArmController] Using slow transition ({moving_time}s) for {pose_name} pose")
+        
+        result = self.move_joints(
+            pose_joints,
+            unit='radians',
+            moving_time=moving_time,
+            blocking=blocking
+        )
+        
+        if result['success']:
+            with self.state_lock:
+                self.current_state = target_state
+        
+        return result
+    
+    def execute_trajectory(self, waypoints: List[Dict], speed: str = 'slow', coordinate_with_gripper=None) -> Dict:
+        """
+        Execute a multi-waypoint trajectory with optional gripper coordination.
+        
+        Args:
+            waypoints: List of waypoint dictionaries with:
+                - 'point': [x,y,z] position or [y,x] normalized
+                - 'label': descriptive name for waypoint
+                - 'gripper_action': optional 'open', 'close', or 'maintain'
+            speed: 'slow', 'medium', or 'fast' 
+            coordinate_with_gripper: Optional gripper controller for coordinated actions
+            
+        Returns:
+            Dictionary with trajectory execution results
+        """
+        # Map speed to moving_time
+        speed_map = {'slow': 2.5, 'medium': 1.5, 'fast': 0.8}
+        moving_time = speed_map.get(speed, 1.5)
+        
+        # Pre-validate all waypoints if safety is enabled
+        if self.safety_enabled and self.safety_validator:
+            print(f"[ArmController] Pre-validating {len(waypoints)} waypoints for safety...")
+            for i, waypoint in enumerate(waypoints):
+                point = waypoint.get('point', [])
+                label = waypoint.get('label', f'waypoint_{i}')
+                
+                # Convert point format if needed
+                if len(point) == 2:
+                    x = point[1] / 1000.0 if point[1] > 1 else point[1]
+                    y = point[0] / 1000.0 if point[0] > 1 else point[0]
+                    z = 0.2
+                    position = [x, y, z]
+                else:
+                    position = point
+                
+                if len(position) >= 3:
+                    validation = self.safety_validator.validate_position(position[0], position[1], position[2])
+                    if not validation.valid:
+                        print(f"[ArmController] ⚠️ SAFETY: Waypoint '{label}' blocked: {validation.message}")
+                        return {
+                            "success": False,
+                            "error": f"Waypoint '{label}' failed safety check: {validation.message}",
+                            "waypoint_index": i,
+                            "safety": validation.to_dict()
+                        }
+        
+        waypoint_results = []
+        overall_success = True
+        
+        print(f"[ArmController] Starting trajectory with {len(waypoints)} waypoints at {speed} speed")
+        
+        for i, waypoint in enumerate(waypoints):
+            point = waypoint.get('point', [])
+            label = waypoint.get('label', f'waypoint_{i}')
+            gripper_action = waypoint.get('gripper_action')
+            
+            # Convert point format if needed
+            if len(point) == 2:
+                # [y,x] normalized format - convert to [x,y,z]
+                x = point[1] / 1000.0 if point[1] > 1 else point[1]
+                y = point[0] / 1000.0 if point[0] > 1 else point[0]
+                z = 0.2  # Default working height
+                position = [x, y, z]
+            else:
+                position = point
+            
+            print(f"[ArmController] Waypoint {i+1}/{len(waypoints)} '{label}': {[f'{p:.3f}' for p in position]}")
+            
+            # Move arm to waypoint
+            result = self.move_to_position(
+                position=position,
+                moving_time=moving_time,
+                blocking=True  # Wait for completion
+            )
+            
+            # Coordinate gripper action if controller provided
+            if gripper_action and coordinate_with_gripper:
+                try:
+                    if gripper_action == 'open':
+                        coordinate_with_gripper.open_gripper()
+                        time.sleep(0.5)
+                        print(f"[ArmController] ✓ Gripper opened")
+                    elif gripper_action == 'close':
+                        coordinate_with_gripper.close_gripper()
+                        time.sleep(0.5)
+                        print(f"[ArmController] ✓ Gripper closed")
+                except Exception as e:
+                    print(f"[ArmController] ✗ Gripper action failed: {e}")
+            
+            waypoint_results.append({
+                'label': label,
+                'position': position,
+                'success': result.get('success', False)
+            })
+            
+            if not result.get('success', False):
+                overall_success = False
+                print(f"[ArmController] ✗ Trajectory aborted at waypoint '{label}'")
+                break
+        
+        completion_msg = f"✓ Completed {len(waypoint_results)}/{len(waypoints)} waypoints" if overall_success else f"✗ Failed at waypoint {len(waypoint_results)}"
+        print(f"[ArmController] {completion_msg}")
+        
+        return {
+            'success': overall_success,
+            'waypoints_completed': waypoint_results,
+            'total_waypoints': len(waypoints),
+            'final_state': self.get_arm_state()
+        }
+    
+    def get_arm_state(self) -> Dict:
+        """
+        Get current arm state and position.
+        
+        Returns:
+            Dictionary containing:
+            - success: bool
+            - state: current state
+            - joints: current joint positions (radians)
+            - joints_degrees: current joint positions (degrees)
+            - ee_position: end effector position (x,y,z)
+            - ee_orientation: end effector orientation (roll,pitch,yaw)
+        """
+        if not self.initialized:
+            return {
+                "success": False,
+                "error": "Not initialized",
+                "state": ArmState.UNKNOWN.value,
+                "joints": [0.0] * 6,
+                "joints_degrees": [0.0] * 6,
+            }
+        
+        with self.state_lock:
+            # Get end effector pose from transformation matrix
+            ee_pos = None
+            ee_orient = None
+            if self.current_ee_pose is not None:
+                # Extract position from transformation matrix
+                ee_pos = {
+                    'x': float(self.current_ee_pose[0, 3]),
+                    'y': float(self.current_ee_pose[1, 3]),
+                    'z': float(self.current_ee_pose[2, 3])
+                }
+                
+                # Extract orientation (simplified - would need proper rotation matrix to euler conversion)
+                # For now, just report the yaw based on position
+                yaw = math.atan2(ee_pos['y'], ee_pos['x'])
+                ee_orient = {'roll': 0.0, 'pitch': 0.0, 'yaw': yaw}
+            
+            return {
+                "success": True,
+                "state": self.current_state.value,
+                "joints": list(self.current_joints),
+                "joints_degrees": [math.degrees(j) for j in self.current_joints],
+                "ee_position": ee_pos,
+                "ee_orientation": ee_orient,
+                "pose": self._detect_current_pose()
+            }
+    
+    def _detect_current_pose(self) -> Optional[str]:
+        """Detect if current position matches a named pose"""
+        tolerance = 0.1  # radians
+        
+        for pose_name, pose_joints in self.POSES.items():
+            if all(abs(a - b) < tolerance for a, b in zip(self.current_joints, pose_joints)):
+                return pose_name
+        
+        return None
+    
+    def set_speed(self, moving_time: float, accel_time: Optional[float] = None):
+        """
+        Set default movement speed.
+        
+        Args:
+            moving_time: Default time for movements (seconds)
+            accel_time: Acceleration time (seconds)
+        """
+        self.default_moving_time = moving_time
+        if accel_time is not None:
+            self.default_accel_time = accel_time
+        
+        if self.initialized:
+            self.bot.arm.set_trajectory_time(moving_time, accel_time)
+        
+        print(f"[ArmController] Speed set: moving_time={moving_time}s, accel_time={self.default_accel_time}s")
+    
+    def emergency_stop(self) -> Dict:
+        """Emergency stop - disable torque on all joints"""
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized"}
+        
+        try:
+            print("[ArmController] EMERGENCY STOP!")
+            self.bot.core.robot_torque_enable('group', 'arm', False)
+            with self.state_lock:
+                self.current_state = ArmState.ERROR
+            return {"success": True, "state": "emergency_stopped"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def resume_after_stop(self) -> Dict:
+        """Re-enable torque after emergency stop"""
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized"}
+        
+        try:
+            print("[ArmController] Resuming after emergency stop")
+            torque_on(self.bot)
+            # Capture current position
+            self.bot.arm.capture_joint_positions()
+            with self.state_lock:
+                self.current_state = ArmState.IDLE
+            return {"success": True, "state": "resumed"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def shutdown(self):
+        """Shutdown robot connection and cleanup."""
+        print("[ArmController] Shutting down...")
+        self.initialized = False
+        
+        if self.node:
+            robot_shutdown(self.node)
+        
+        print("[ArmController] ✓ Shutdown complete")
+    
+    def __del__(self):
+        """Cleanup on deletion"""
+        if self.initialized:
+            self.shutdown()
+
+
+# Convenience functions for simple usage
+_global_controller = None
+
+def get_controller() -> ArmController:
+    """Get or create global controller instance"""
+    global _global_controller
+    if _global_controller is None:
+        _global_controller = ArmController()
+        _global_controller.initialize()
+    return _global_controller
+
+def move_arm(position=None, joints=None, pose=None, **kwargs) -> Dict:
+    """Simple function to move arm"""
+    controller = get_controller()
+    
+    if pose is not None:
+        return controller.move_to_pose(pose, **kwargs)
+    elif joints is not None:
+        return controller.move_joints(joints, **kwargs)
+    elif position is not None:
+        return controller.move_to_position(position, **kwargs)
+    else:
+        return {"success": False, "error": "No target specified"}
+
+def get_arm_state() -> Dict:
+    """Simple function to get arm state"""
+    return get_controller().get_arm_state()
+
+def cleanup():
+    """Cleanup global controller"""
+    global _global_controller
+    if _global_controller:
+        _global_controller.shutdown()
+        _global_controller = None

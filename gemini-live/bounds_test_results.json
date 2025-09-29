@@ -1,0 +1,1287 @@
+{
+  "timestamp": "2025-09-10 02:03:54",
+  "results": {
+    "x_tests": [
+      {
+        "position": [
+          0.05,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.05",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'X=0.05' failed safety check: X position 0.050m outside bounds [0.100, 0.350]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "X position 0.050m outside bounds [0.100, 0.350]",
+              "details": {
+                "position": {
+                  "x": 0.05,
+                  "y": 0.0,
+                  "z": 0.2
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.1,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.10",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "waypoints_completed": [
+              {
+                "label": "X=0.10",
+                "position": [
+                  0.1,
+                  0.0,
+                  0.2
+                ],
+                "success": false
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "error",
+              "joints": [
+                0.0,
+                -0.96,
+                1.16,
+                0.0,
+                -0.3,
+                0.0
+              ],
+              "joints_degrees": [
+                0.0,
+                -55.00394833255903,
+                66.46310423517549,
+                0.0,
+                -17.188733853924695,
+                0.0
+              ],
+              "ee_position": {
+                "x": 0.25151809305656336,
+                "y": 0.0004594208739068051,
+                "z": 0.25185487270339807
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0018265897191798084
+              },
+              "pose": "ready"
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.15,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.15",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "waypoints_completed": [
+              {
+                "label": "X=0.15",
+                "position": [
+                  0.15,
+                  0.0,
+                  0.2
+                ],
+                "success": false
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "error",
+              "joints": [
+                0.0,
+                -0.96,
+                1.16,
+                0.0,
+                -0.3,
+                0.0
+              ],
+              "joints_degrees": [
+                0.0,
+                -55.00394833255903,
+                66.46310423517549,
+                0.0,
+                -17.188733853924695,
+                0.0
+              ],
+              "ee_position": {
+                "x": 0.25151709239082526,
+                "y": 0.0008452441153533399,
+                "z": 0.25185487270339807
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0033605705497523532
+              },
+              "pose": "ready"
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.2,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.20",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "X=0.20",
+                "position": [
+                  0.2,
+                  0.0,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                -5.1958437552457326e-14,
+                -1.2561971384445991,
+                1.5144083632344705,
+                -1.9628743075372768e-13,
+                -0.2582112247898718,
+                1.900701818158268e-13
+              ],
+              "joints_degrees": [
+                -2.976999181849852e-12,
+                -71.9747942692867,
+                86.76920767265011,
+                -1.1246441353654995e-11,
+                -14.79441340336343,
+                1.0890219229331081e-11
+              ],
+              "ee_position": {
+                "x": 0.1984973061811462,
+                "y": 0.0003724606332654327,
+                "z": 0.19224322658132154
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0018763992484433195
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.25",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "X=0.25",
+                "position": [
+                  0.25,
+                  0.0,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                3.552713678800501e-15,
+                -0.7555666641499741,
+                1.4275523854081928,
+                5.329070518200751e-15,
+                -0.6719857212582188,
+                -3.9968028886505635e-15
+              ],
+              "joints_degrees": [
+                2.0355549961366507e-13,
+                -43.29078099657204,
+                81.79272671772253,
+                3.053332494204976e-13,
+                -38.5019457211505,
+                -2.2899993706537323e-13
+              ],
+              "ee_position": {
+                "x": 0.2445643664164254,
+                "y": 0.0005421489952463497,
+                "z": 0.19260344806836935
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0022167910849836205
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.3,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.30",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "X=0.30",
+                "position": [
+                  0.3,
+                  0.0,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                -1.199040866595169e-14,
+                -0.453126005234159,
+                1.290595091413497,
+                -2.0872192862952943e-14,
+                -0.837469086179337,
+                1.3322676295501878e-14
+              ],
+              "joints_degrees": [
+                -6.869998111961196e-13,
+                -25.96220768754016,
+                73.94565179829405,
+                -1.1958885602302823e-12,
+                -47.98344411075383,
+                7.63333123551244e-13
+              ],
+              "ee_position": {
+                "x": 0.2958472688142627,
+                "y": 0.0006532537759501487,
+                "z": 0.1932928767948347
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0022080741759144817
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.35,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.35",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "X=0.35",
+                "position": [
+                  0.35,
+                  0.0,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                0.0,
+                -0.2500695652874132,
+                1.1367351786216418,
+                0.0,
+                -0.8866656133342294,
+                0.0
+              ],
+              "joints_degrees": [
+                0.0,
+                -14.327930675639971,
+                65.13012815906984,
+                0.0,
+                -50.802197483429914,
+                0.0
+              ],
+              "ee_position": {
+                "x": 0.3459042151814641,
+                "y": 0.0007393677451912398,
+                "z": 0.19272075377501377
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.002137489474593821
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.4,
+          0.0,
+          0.2
+        ],
+        "label": "X=0.40",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'X=0.40' failed safety check: X position 0.400m outside bounds [0.100, 0.350]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "X position 0.400m outside bounds [0.100, 0.350]",
+              "details": {
+                "position": {
+                  "x": 0.4,
+                  "y": 0.0,
+                  "z": 0.2
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      }
+    ],
+    "y_tests": [
+      {
+        "position": [
+          0.25,
+          -0.3,
+          0.2
+        ],
+        "label": "Y=-0.30",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'Y=-0.30' failed safety check: Y position -0.300m outside bounds [-0.250, 0.250]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "Y position -0.300m outside bounds [-0.250, 0.250]",
+              "details": {
+                "position": {
+                  "x": 0.25,
+                  "y": -0.3,
+                  "z": 0.2
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          -0.25,
+          0.2
+        ],
+        "label": "Y=-0.25",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Y=-0.25",
+                "position": [
+                  0.25,
+                  -0.25,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                -0.7853799433106983,
+                -0.2378061846955153,
+                1.1253010968731871,
+                2.1411504304236217e-05,
+                -0.8874928789148657,
+                -1.1473408775941607e-05
+              ],
+              "joints_degrees": [
+                -44.99895606592686,
+                -13.625290725161577,
+                64.47500353227582,
+                0.0012267888296589315,
+                -50.84959630973682,
+                -0.000657377899489814
+              ],
+              "ee_position": {
+                "x": 0.24810559142998984,
+                "y": -0.24705043684743022,
+                "z": 0.1931977502398677
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": -0.7832672128986831
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          -0.15,
+          0.2
+        ],
+        "label": "Y=-0.15",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Y=-0.15",
+                "position": [
+                  0.25,
+                  -0.15,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                -0.5404383132756139,
+                -0.4948478453261447,
+                1.314922846051239,
+                -8.218380837687889e-05,
+                -0.8200627805496747,
+                9.83044201361416e-05
+              ],
+              "joints_degrees": [
+                -30.964834437861683,
+                -28.35269303833065,
+                75.33952946406649,
+                -0.00470878536430706,
+                -46.98613626125938,
+                0.00563242838128178
+              ],
+              "ee_position": {
+                "x": 0.24892673595875042,
+                "y": -0.14874057803306173,
+                "z": 0.19166176251926284
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": -0.5385995254294582
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.2
+        ],
+        "label": "Y=0.00",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Y=0.00",
+                "position": [
+                  0.25,
+                  0.0,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                3.552713678800501e-15,
+                -0.7555666641499741,
+                1.4275523854081928,
+                5.329070518200751e-15,
+                -0.6719857212582188,
+                -3.9968028886505635e-15
+              ],
+              "joints_degrees": [
+                2.0355549961366507e-13,
+                -43.29078099657204,
+                81.79272671772253,
+                3.053332494204976e-13,
+                -38.5019457211505,
+                -2.2899993706537323e-13
+              ],
+              "ee_position": {
+                "x": 0.24765706557956074,
+                "y": 0.0005478760949255436,
+                "z": 0.19404318793547914
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.002212233274584612
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.15,
+          0.2
+        ],
+        "label": "Y=0.15",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Y=0.15",
+                "position": [
+                  0.25,
+                  0.15,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                0.5404383132756134,
+                -0.4948478453261451,
+                1.314922846051239,
+                8.218380837687889e-05,
+                -0.8200627805496747,
+                -9.83044201361416e-05
+              ],
+              "joints_degrees": [
+                30.964834437861658,
+                -28.352693038330674,
+                75.33952946406649,
+                0.00470878536430706,
+                -46.98613626125938,
+                -0.00563242838128178
+              ],
+              "ee_position": {
+                "x": 0.24724788966596045,
+                "y": 0.14790861696269508,
+                "z": 0.19265795824824963
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.5391096024251828
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.25,
+          0.2
+        ],
+        "label": "Y=0.25",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Y=0.25",
+                "position": [
+                  0.25,
+                  0.25,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                0.7853799433106983,
+                -0.23780618469551573,
+                1.1253010968731871,
+                -2.1411504304236217e-05,
+                -0.8874928789148662,
+                1.1473408775941607e-05
+              ],
+              "joints_degrees": [
+                44.99895606592686,
+                -13.625290725161602,
+                64.47500353227582,
+                -0.0012267888296589315,
+                -50.84959630973684,
+                0.000657377899489814
+              ],
+              "ee_position": {
+                "x": 0.24759160647430503,
+                "y": 0.24637137663832226,
+                "z": 0.19235001285311842
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.7829278824338262
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.3,
+          0.2
+        ],
+        "label": "Y=0.30",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'Y=0.30' failed safety check: Y position 0.300m outside bounds [-0.250, 0.250]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "Y position 0.300m outside bounds [-0.250, 0.250]",
+              "details": {
+                "position": {
+                  "x": 0.25,
+                  "y": 0.3,
+                  "z": 0.2
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      }
+    ],
+    "z_tests": [
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.08
+        ],
+        "label": "Z=0.08",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'Z=0.08' failed safety check: Z position 0.080m outside bounds [0.120, 0.400]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "Z position 0.080m outside bounds [0.120, 0.400]",
+              "details": {
+                "position": {
+                  "x": 0.25,
+                  "y": 0.0,
+                  "z": 0.08
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.1
+        ],
+        "label": "Z=0.10",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'Z=0.10' failed safety check: Z position 0.100m outside bounds [0.120, 0.400]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "Z position 0.100m outside bounds [0.120, 0.400]",
+              "details": {
+                "position": {
+                  "x": 0.25,
+                  "y": 0.0,
+                  "z": 0.1
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.12
+        ],
+        "label": "Z=0.12",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Z=0.12",
+                "position": [
+                  0.25,
+                  0.0,
+                  0.12
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                -5.728750807065808e-14,
+                0.09994070139078648,
+                1.5252238621365644,
+                -6.084022174945858e-14,
+                -1.6251645635273515,
+                -2.6645352591003757e-15
+              ],
+              "joints_degrees": [
+                -3.2823324312703493e-12,
+                5.726180391269302,
+                87.38889011306846,
+                -3.485887930884014e-12,
+                -93.11507050433781,
+                -1.526666247102488e-13
+              ],
+              "ee_position": {
+                "x": 0.24900052817443113,
+                "y": 0.00038196233662023024,
+                "z": 0.11717987301103855
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0015339808305725457
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.15
+        ],
+        "label": "Z=0.15",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Z=0.15",
+                "position": [
+                  0.25,
+                  0.0,
+                  0.15
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                -5.329070518200751e-15,
+                -0.28694815147115005,
+                1.5145035591660925,
+                5.773159728050814e-15,
+                -1.2275554076949429,
+                -1.4654943925052066e-14
+              ],
+              "joints_degrees": [
+                -3.053332494204976e-13,
+                -16.440918018377563,
+                86.77466199775887,
+                3.3077768687220577e-13,
+                -70.33374397938132,
+                -8.396664359063685e-13
+              ],
+              "ee_position": {
+                "x": 0.2478127542225839,
+                "y": 0.00038014031271790984,
+                "z": 0.14315622021285734
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0015339808305725457
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.2
+        ],
+        "label": "Z=0.20",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Z=0.20",
+                "position": [
+                  0.25,
+                  0.0,
+                  0.2
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                3.552713678800501e-15,
+                -0.7555666641499741,
+                1.4275523854081928,
+                5.329070518200751e-15,
+                -0.6719857212582188,
+                -3.9968028886505635e-15
+              ],
+              "joints_degrees": [
+                2.0355549961366507e-13,
+                -43.29078099657204,
+                81.79272671772253,
+                3.053332494204976e-13,
+                -38.5019457211505,
+                -2.2899993706537323e-13
+              ],
+              "ee_position": {
+                "x": 0.2462655475562258,
+                "y": 0.0005457415312780727,
+                "z": 0.19053108649191913
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.002216065719805508
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.3
+        ],
+        "label": "Z=0.30",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Z=0.30",
+                "position": [
+                  0.25,
+                  0.0,
+                  0.3
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                -3.9968028886505635e-15,
+                -1.0211957249763275,
+                1.137772318823643,
+                -7.105427357601002e-15,
+                -0.116576593847316,
+                7.105427357601002e-15
+              ],
+              "joints_degrees": [
+                -2.2899993706537323e-13,
+                -58.510205097945914,
+                65.18955191540786,
+                -4.0711099922733015e-13,
+                -6.679346817461967,
+                4.0711099922733015e-13
+              ],
+              "ee_position": {
+                "x": 0.24929431081947967,
+                "y": 0.00041274428396889613,
+                "z": 0.2892637518668536
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0016556491220253724
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.4
+        ],
+        "label": "Z=0.40",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": true,
+            "waypoints_completed": [
+              {
+                "label": "Z=0.40",
+                "position": [
+                  0.25,
+                  0.0,
+                  0.4
+                ],
+                "success": true
+              }
+            ],
+            "total_waypoints": 1,
+            "final_state": {
+              "success": true,
+              "state": "at_target",
+              "joints": [
+                1.3322676295501878e-15,
+                -1.0020031234955886,
+                0.7966264357225992,
+                -2.6645352591003757e-15,
+                0.205376687772989,
+                2.6645352591003757e-15
+              ],
+              "joints_degrees": [
+                7.63333123551244e-14,
+                -57.41055003522305,
+                45.64333261545469,
+                -1.526666247102488e-13,
+                11.767217419768329,
+                1.526666247102488e-13
+              ],
+              "ee_position": {
+                "x": 0.24885086420217042,
+                "y": 0.000325109465746754,
+                "z": 0.3907538215461278
+              },
+              "ee_orientation": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0013064422413174201
+              },
+              "pose": null
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.45
+        ],
+        "label": "Z=0.45",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'Z=0.45' failed safety check: Z position 0.450m outside bounds [0.120, 0.400]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "Z position 0.450m outside bounds [0.120, 0.400]",
+              "details": {
+                "position": {
+                  "x": 0.25,
+                  "y": 0.0,
+                  "z": 0.45
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      },
+      {
+        "position": [
+          0.25,
+          0.0,
+          0.5
+        ],
+        "label": "Z=0.50",
+        "success": false,
+        "result": {
+          "success": true,
+          "result": {
+            "success": false,
+            "error": "Waypoint 'Z=0.50' failed safety check: Z position 0.500m outside bounds [0.120, 0.400]",
+            "waypoint_index": 0,
+            "safety": {
+              "valid": false,
+              "risk_level": "blocked",
+              "message": "Z position 0.500m outside bounds [0.120, 0.400]",
+              "details": {
+                "position": {
+                  "x": 0.25,
+                  "y": 0.0,
+                  "z": 0.5
+                },
+                "bounds": {
+                  "x_min": 0.1,
+                  "x_max": 0.35,
+                  "y_min": -0.25,
+                  "y_max": 0.25,
+                  "z_min": 0.12,
+                  "z_max": 0.4
+                }
+              }
+            }
+          },
+          "call_id": null
+        }
+      }
+    ]
+  },
+  "determined_bounds": {
+    "x": [
+      0.1,
+      0.35
+    ],
+    "y": [
+      -0.25,
+      0.25
+    ],
+    "z": [
+      0.12,
+      0.4
+    ]
+  },
+  "recommended_bounds": {
+    "x": [
+      0.12000000000000001,
+      0.32999999999999996
+    ],
+    "y": [
+      -0.23,
+      0.23
+    ],
+    "z": [
+      0.13999999999999999,
+      0.38
+    ]
+  }
+}

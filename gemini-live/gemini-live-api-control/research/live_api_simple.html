@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Live API - Pen Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        #status-box {
+            padding: 30px;
+            border-radius: 10px;
+            margin: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            min-width: 400px;
+        }
+        
+        #status-box.waiting {
+            background: #666;
+        }
+        
+        #status-box.detected {
+            background: #4CAF50;
+        }
+        
+        #status-box.not-detected {
+            background: #f44336;
+        }
+        
+        #video {
+            width: 640px;
+            height: 480px;
+            background: #000;
+            border-radius: 10px;
+            margin: 20px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .connect { background: #2196F3; color: white; }
+        .disconnect { background: #f44336; color: white; }
+        
+        #logs {
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            max-width: 640px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 5px;
+        }
+        
+        .log-detection { color: #4CAF50; }
+        .log-no-detection { color: #f44336; }
+        .log-info { color: #2196F3; }
+    </style>
+</head>
+<body>
+    <h1>🎯 Gemini Live API - Pen Detection</h1>
+    
+    <div id="status-box" class="waiting">
+        <h2 id="status-text">⏳ Not Connected</h2>
+        <div id="detection-count">Detections: 0</div>
+    </div>
+    
+    <video id="video" autoplay playsinline></video>
+    
+    <div>
+        <button id="connect-btn" class="connect">Connect</button>
+        <button id="disconnect-btn" class="disconnect" style="display:none;">Disconnect</button>
+    </div>
+    
+    <div id="logs"></div>
+
+    <script type="module">
+        // Configuration
+        const API_KEY = prompt("Enter your Gemini API key:") || localStorage.getItem('gemini_api_key');
+        if (API_KEY) {
+            localStorage.setItem('gemini_api_key', API_KEY);
+        }
+        
+        let ws = null;
+        let mediaStream = null;
+        let detectionCount = 0;
+        let lastState = null;
+        
+        const statusBox = document.getElementById('status-box');
+        const statusText = document.getElementById('status-text');
+        const detectionCountEl = document.getElementById('detection-count');
+        const video = document.getElementById('video');
+        const logsEl = document.getElementById('logs');
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logsEl.insertBefore(entry, logsEl.firstChild);
+            
+            // Keep only last 50 logs
+            while (logsEl.children.length > 50) {
+                logsEl.removeChild(logsEl.lastChild);
+            }
+        }
+        
+        async function startWebcam() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 },
+                    audio: false 
+                });
+                video.srcObject = mediaStream;
+                log('Webcam started', 'info');
+                return true;
+            } catch (err) {
+                log('Failed to start webcam: ' + err.message, 'error');
+                return false;
+            }
+        }
+        
+        function captureFrame() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            return new Promise(resolve => {
+                canvas.toBlob(blob => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = reader.result.split(',')[1];
+                        resolve(base64);
+                    };
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', 0.8);
+            });
+        }
+        
+        async function connect() {
+            if (!API_KEY) {
+                alert('Please provide an API key');
+                return;
+            }
+            
+            // Start webcam first
+            if (!await startWebcam()) {
+                return;
+            }
+            
+            log('Connecting to Gemini Live API...', 'info');
+            
+            // WebSocket URL for Gemini Live API
+            const wsUrl = `wss://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=${API_KEY}`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                log('Connected to Gemini Live API', 'info');
+                connectBtn.style.display = 'none';
+                disconnectBtn.style.display = 'inline-block';
+                
+                // Send initial configuration
+                const config = {
+                    setup: {
+                        model: "gemini-live-2.5-flash-preview",
+                        systemInstruction: "You are a pen detector. Analyze each image and call the holding_pen function with is_holding=true if you see a pen, false otherwise. Only call functions, no text.",
+                        tools: [{
+                            functionDeclarations: [{
+                                name: "holding_pen",
+                                description: "Report if a pen is visible",
+                                parameters: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        is_holding: {
+                                            type: "BOOLEAN",
+                                            description: "True if pen visible"
+                                        }
+                                    },
+                                    required: ["is_holding"]
+                                }
+                            }]
+                        }]
+                    }
+                };
+                
+                ws.send(JSON.stringify(config));
+                log('Sent configuration', 'info');
+                
+                // Start sending frames
+                startFrameCapture();
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    // Check for tool calls
+                    if (data.toolCall) {
+                        const calls = data.toolCall.functionCalls || [];
+                        for (const call of calls) {
+                            if (call.name === 'holding_pen') {
+                                const isHolding = call.args?.is_holding || false;
+                                handleDetection(isHolding);
+                                
+                                // Send tool response
+                                ws.send(JSON.stringify({
+                                    toolResponse: {
+                                        functionResponses: [{
+                                            name: call.name,
+                                            id: call.id,
+                                            response: { result: "ok" }
+                                        }]
+                                    }
+                                }));
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('Parse error:', err);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                log('WebSocket error: ' + error, 'error');
+            };
+            
+            ws.onclose = () => {
+                log('Disconnected from Gemini Live API', 'info');
+                connectBtn.style.display = 'inline-block';
+                disconnectBtn.style.display = 'none';
+                statusBox.className = 'waiting';
+                statusText.textContent = '⏳ Not Connected';
+            };
+        }
+        
+        function startFrameCapture() {
+            const captureInterval = setInterval(async () => {
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    clearInterval(captureInterval);
+                    return;
+                }
+                
+                const frame = await captureFrame();
+                
+                // Send frame as realtime input
+                ws.send(JSON.stringify({
+                    realtimeInput: {
+                        media: {
+                            mimeType: "image/jpeg",
+                            data: frame
+                        }
+                    }
+                }));
+                
+                // Send periodic check message to trigger detection
+                ws.send(JSON.stringify({
+                    clientContent: {
+                        turns: [{ text: "Check for pen" }],
+                        turnComplete: true
+                    }
+                }));
+                
+            }, 2000); // Every 2 seconds
+        }
+        
+        function handleDetection(isHolding) {
+            if (isHolding !== lastState) {
+                detectionCount++;
+                detectionCountEl.textContent = `Detections: ${detectionCount}`;
+                lastState = isHolding;
+                
+                if (isHolding) {
+                    statusBox.className = 'detected';
+                    statusText.textContent = '✅ PEN DETECTED';
+                    log('Pen detected!', 'detection');
+                    
+                    // Send to Python bridge if available
+                    sendToPython(true);
+                } else {
+                    statusBox.className = 'not-detected';
+                    statusText.textContent = '❌ NO PEN';
+                    log('No pen detected', 'no-detection');
+                    
+                    // Send to Python bridge if available
+                    sendToPython(false);
+                }
+            }
+        }
+        
+        async function sendToPython(isHolding) {
+            try {
+                await fetch('http://localhost:8081/tool-call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: 'holding_pen',
+                        args: { is_holding: isHolding }
+                    })
+                });
+            } catch (err) {
+                // Python server not available, ignore
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            video.srcObject = null;
+        }
+        
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        
+        log('Ready. Click Connect to start.', 'info');
+    </script>
+</body>
+</html>
