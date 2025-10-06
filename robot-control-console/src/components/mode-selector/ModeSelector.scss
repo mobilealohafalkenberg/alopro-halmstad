@@ -1,0 +1,51 @@
+.mode-selector {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+
+  label {
+    font-weight: 500;
+    color: #ccc;
+  }
+
+  .mode-buttons {
+    display: flex;
+    gap: 10px;
+
+    button {
+      padding: 10px 20px;
+      border: 2px solid #4a9eff;
+      background: transparent;
+      color: #4a9eff;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 500;
+
+      &.active {
+        background: #4a9eff;
+        color: white;
+      }
+
+      &:hover:not(:disabled) {
+        background: rgba(74, 158, 255, 0.2);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  .mode-info {
+    font-size: 12px;
+    color: #888;
+
+    .info {
+      background: rgba(74, 158, 255, 0.1);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+  }
+}
