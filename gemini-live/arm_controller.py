@@ -9,6 +9,7 @@ Designed for integration with Gemini Live API
 import time
 import threading
 import math
+import uuid
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
@@ -40,6 +41,14 @@ class ArmState(Enum):
     AT_TARGET = "at_target"
     ERROR = "error"
     UNKNOWN = "unknown"
+
+
+class TrajectoryStatus(Enum):
+    """Trajectory execution status"""
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
 
 
 class ArmController:
@@ -111,10 +120,15 @@ class ArmController:
         self.current_ee_pose = None
         self.state_lock = threading.Lock()
         self.dry_run = dry_run
-        
+
         # Movement parameters
         self.default_moving_time = 2.0
         self.default_accel_time = 0.3
+
+        # Trajectory tracking for async execution
+        self.active_trajectories = {}  # trajectory_id -> trajectory info
+        self.trajectory_lock = threading.Lock()
+        self.cancel_flags = {}  # trajectory_id -> threading.Event for cancellation
         
         # Initialize safety validator
         self.safety_enabled = enable_safety and SAFETY_ENABLED
@@ -611,32 +625,102 @@ class ArmController:
         
         return result
     
-    def execute_trajectory(self, waypoints: List[Dict], speed: str = 'slow', coordinate_with_gripper=None) -> Dict:
+    def execute_trajectory(self, waypoints: List[Dict], speed: str = 'slow', coordinate_with_gripper=None, blocking: bool = True) -> Dict:
         """
         Execute a multi-waypoint trajectory with optional gripper coordination.
-        
+
         Args:
             waypoints: List of waypoint dictionaries with:
                 - 'point': [x,y,z] position or [y,x] normalized
                 - 'label': descriptive name for waypoint
                 - 'gripper_action': optional 'open', 'close', or 'maintain'
-            speed: 'slow', 'medium', or 'fast' 
+            speed: 'slow', 'medium', or 'fast'
             coordinate_with_gripper: Optional gripper controller for coordinated actions
-            
+            blocking: If True, wait for trajectory completion. If False, return immediately with trajectory_id
+
         Returns:
-            Dictionary with trajectory execution results
+            Dictionary with trajectory execution results (if blocking=True) or trajectory_id (if blocking=False)
         """
+        # For non-blocking mode, start trajectory in background thread
+        if not blocking:
+            trajectory_id = str(uuid.uuid4())
+
+            # Pre-validate all waypoints if safety is enabled
+            if self.safety_enabled and self.safety_validator:
+                print(f"[ArmController] Pre-validating {len(waypoints)} waypoints for safety...")
+                for i, waypoint in enumerate(waypoints):
+                    point = waypoint.get('point', [])
+                    label = waypoint.get('label', f'waypoint_{i}')
+
+                    # Convert point format if needed
+                    if len(point) == 2:
+                        x = point[1] / 1000.0 if point[1] > 1 else point[1]
+                        y = point[0] / 1000.0 if point[0] > 1 else point[0]
+                        z = 0.2
+                        position = [x, y, z]
+                    else:
+                        position = point
+
+                    if len(position) >= 3:
+                        validation = self.safety_validator.validate_position(position[0], position[1], position[2])
+                        if not validation.valid:
+                            print(f"[ArmController] ⚠️ SAFETY: Waypoint '{label}' blocked: {validation.message}")
+                            return {
+                                "success": False,
+                                "error": f"Waypoint '{label}' failed safety check: {validation.message}",
+                                "waypoint_index": i,
+                                "safety": validation.to_dict()
+                            }
+
+            # Initialize trajectory tracking
+            with self.trajectory_lock:
+                self.active_trajectories[trajectory_id] = {
+                    'status': TrajectoryStatus.RUNNING,
+                    'waypoints': waypoints,
+                    'speed': speed,
+                    'progress': 0,
+                    'current_waypoint': 0,
+                    'total_waypoints': len(waypoints),
+                    'started_at': time.time(),
+                    'completed_at': None,
+                    'result': None,
+                    'error': None
+                }
+                self.cancel_flags[trajectory_id] = threading.Event()
+
+            # Start trajectory in background thread
+            thread = threading.Thread(
+                target=self._execute_trajectory_async,
+                args=(trajectory_id, waypoints, speed, coordinate_with_gripper),
+                daemon=True
+            )
+            thread.start()
+
+            print(f"[ArmController] Started trajectory {trajectory_id} in background ({len(waypoints)} waypoints)")
+
+            return {
+                'success': True,
+                'trajectory_id': trajectory_id,
+                'blocking': False,
+                'total_waypoints': len(waypoints)
+            }
+
+        # Blocking mode - execute synchronously
+        return self._execute_trajectory_sync(waypoints, speed, coordinate_with_gripper)
+
+    def _execute_trajectory_sync(self, waypoints: List[Dict], speed: str, coordinate_with_gripper=None) -> Dict:
+        """Execute trajectory synchronously (blocking mode)"""
         # Map speed to moving_time
         speed_map = {'slow': 2.5, 'medium': 1.5, 'fast': 0.8}
         moving_time = speed_map.get(speed, 1.5)
-        
+
         # Pre-validate all waypoints if safety is enabled
         if self.safety_enabled and self.safety_validator:
             print(f"[ArmController] Pre-validating {len(waypoints)} waypoints for safety...")
             for i, waypoint in enumerate(waypoints):
                 point = waypoint.get('point', [])
                 label = waypoint.get('label', f'waypoint_{i}')
-                
+
                 # Convert point format if needed
                 if len(point) == 2:
                     x = point[1] / 1000.0 if point[1] > 1 else point[1]
@@ -645,7 +729,7 @@ class ArmController:
                     position = [x, y, z]
                 else:
                     position = point
-                
+
                 if len(position) >= 3:
                     validation = self.safety_validator.validate_position(position[0], position[1], position[2])
                     if not validation.valid:
@@ -656,17 +740,17 @@ class ArmController:
                             "waypoint_index": i,
                             "safety": validation.to_dict()
                         }
-        
+
         waypoint_results = []
         overall_success = True
-        
+
         print(f"[ArmController] Starting trajectory with {len(waypoints)} waypoints at {speed} speed")
-        
+
         for i, waypoint in enumerate(waypoints):
             point = waypoint.get('point', [])
             label = waypoint.get('label', f'waypoint_{i}')
             gripper_action = waypoint.get('gripper_action')
-            
+
             # Convert point format if needed
             if len(point) == 2:
                 # [y,x] normalized format - convert to [x,y,z]
@@ -676,16 +760,16 @@ class ArmController:
                 position = [x, y, z]
             else:
                 position = point
-            
+
             print(f"[ArmController] Waypoint {i+1}/{len(waypoints)} '{label}': {[f'{p:.3f}' for p in position]}")
-            
+
             # Move arm to waypoint
             result = self.move_to_position(
                 position=position,
                 moving_time=moving_time,
                 blocking=True  # Wait for completion
             )
-            
+
             # Coordinate gripper action if controller provided
             if gripper_action and coordinate_with_gripper:
                 try:
@@ -699,28 +783,239 @@ class ArmController:
                         print(f"[ArmController] ✓ Gripper closed")
                 except Exception as e:
                     print(f"[ArmController] ✗ Gripper action failed: {e}")
-            
+
             waypoint_results.append({
                 'label': label,
                 'position': position,
                 'success': result.get('success', False)
             })
-            
+
             if not result.get('success', False):
                 overall_success = False
                 print(f"[ArmController] ✗ Trajectory aborted at waypoint '{label}'")
                 break
-        
+
         completion_msg = f"✓ Completed {len(waypoint_results)}/{len(waypoints)} waypoints" if overall_success else f"✗ Failed at waypoint {len(waypoint_results)}"
         print(f"[ArmController] {completion_msg}")
-        
+
         return {
             'success': overall_success,
             'waypoints_completed': waypoint_results,
             'total_waypoints': len(waypoints),
             'final_state': self.get_arm_state()
         }
-    
+
+    def _execute_trajectory_async(self, trajectory_id: str, waypoints: List[Dict], speed: str, coordinate_with_gripper=None):
+        """Execute trajectory asynchronously in background thread"""
+        try:
+            # Map speed to moving_time
+            speed_map = {'slow': 2.5, 'medium': 1.5, 'fast': 0.8}
+            moving_time = speed_map.get(speed, 1.5)
+
+            waypoint_results = []
+            overall_success = True
+            cancel_event = self.cancel_flags.get(trajectory_id)
+
+            print(f"[ArmController] Executing trajectory {trajectory_id} with {len(waypoints)} waypoints at {speed} speed")
+
+            for i, waypoint in enumerate(waypoints):
+                # Check for cancellation
+                if cancel_event and cancel_event.is_set():
+                    print(f"[ArmController] Trajectory {trajectory_id} canceled at waypoint {i}")
+                    with self.trajectory_lock:
+                        self.active_trajectories[trajectory_id]['status'] = TrajectoryStatus.CANCELED
+                        self.active_trajectories[trajectory_id]['error'] = 'Canceled by user'
+                        self.active_trajectories[trajectory_id]['completed_at'] = time.time()
+                    return
+
+                point = waypoint.get('point', [])
+                label = waypoint.get('label', f'waypoint_{i}')
+                gripper_action = waypoint.get('gripper_action')
+
+                # Convert point format if needed
+                if len(point) == 2:
+                    # [y,x] normalized format - convert to [x,y,z]
+                    x = point[1] / 1000.0 if point[1] > 1 else point[1]
+                    y = point[0] / 1000.0 if point[0] > 1 else point[0]
+                    z = 0.2  # Default working height
+                    position = [x, y, z]
+                else:
+                    position = point
+
+                print(f"[ArmController] Trajectory {trajectory_id} - Waypoint {i+1}/{len(waypoints)} '{label}': {[f'{p:.3f}' for p in position]}")
+
+                # Update progress
+                with self.trajectory_lock:
+                    self.active_trajectories[trajectory_id]['current_waypoint'] = i
+                    self.active_trajectories[trajectory_id]['progress'] = i / len(waypoints)
+
+                # Move arm to waypoint
+                result = self.move_to_position(
+                    position=position,
+                    moving_time=moving_time,
+                    blocking=True  # Still block within the async thread
+                )
+
+                # Coordinate gripper action if controller provided
+                if gripper_action and coordinate_with_gripper:
+                    try:
+                        if gripper_action == 'open':
+                            coordinate_with_gripper.open_gripper()
+                            time.sleep(0.5)
+                            print(f"[ArmController] Trajectory {trajectory_id} - ✓ Gripper opened")
+                        elif gripper_action == 'close':
+                            coordinate_with_gripper.close_gripper()
+                            time.sleep(0.5)
+                            print(f"[ArmController] Trajectory {trajectory_id} - ✓ Gripper closed")
+                    except Exception as e:
+                        print(f"[ArmController] Trajectory {trajectory_id} - ✗ Gripper action failed: {e}")
+
+                waypoint_results.append({
+                    'label': label,
+                    'position': position,
+                    'success': result.get('success', False)
+                })
+
+                if not result.get('success', False):
+                    overall_success = False
+                    print(f"[ArmController] Trajectory {trajectory_id} - ✗ Aborted at waypoint '{label}'")
+                    break
+
+            # Update final status
+            completion_msg = f"✓ Completed {len(waypoint_results)}/{len(waypoints)} waypoints" if overall_success else f"✗ Failed at waypoint {len(waypoint_results)}"
+            print(f"[ArmController] Trajectory {trajectory_id} - {completion_msg}")
+
+            with self.trajectory_lock:
+                self.active_trajectories[trajectory_id]['status'] = TrajectoryStatus.COMPLETED if overall_success else TrajectoryStatus.FAILED
+                self.active_trajectories[trajectory_id]['progress'] = 1.0
+                self.active_trajectories[trajectory_id]['completed_at'] = time.time()
+                self.active_trajectories[trajectory_id]['result'] = {
+                    'success': overall_success,
+                    'waypoints_completed': waypoint_results,
+                    'total_waypoints': len(waypoints),
+                    'final_state': self.get_arm_state()
+                }
+
+        except Exception as e:
+            print(f"[ArmController] Trajectory {trajectory_id} - Exception: {e}")
+            with self.trajectory_lock:
+                self.active_trajectories[trajectory_id]['status'] = TrajectoryStatus.FAILED
+                self.active_trajectories[trajectory_id]['error'] = str(e)
+                self.active_trajectories[trajectory_id]['completed_at'] = time.time()
+        finally:
+            # Clean up cancel flag
+            if trajectory_id in self.cancel_flags:
+                del self.cancel_flags[trajectory_id]
+
+    def get_trajectory_status(self, trajectory_id: str) -> Dict:
+        """
+        Get status of an async trajectory execution.
+
+        Args:
+            trajectory_id: The trajectory ID returned from execute_trajectory(blocking=False)
+
+        Returns:
+            Dictionary containing:
+            - found: bool - whether trajectory exists
+            - status: TrajectoryStatus - current status (running/completed/failed/canceled)
+            - progress: float - completion progress (0.0 to 1.0)
+            - current_waypoint: int - index of current waypoint being executed
+            - total_waypoints: int - total number of waypoints
+            - started_at: float - timestamp when trajectory started
+            - completed_at: float - timestamp when trajectory completed (if finished)
+            - result: dict - final result (if completed)
+            - error: str - error message (if failed or canceled)
+        """
+        with self.trajectory_lock:
+            if trajectory_id not in self.active_trajectories:
+                return {
+                    'found': False,
+                    'error': 'Trajectory not found'
+                }
+
+            traj = self.active_trajectories[trajectory_id]
+
+            return {
+                'found': True,
+                'trajectory_id': trajectory_id,
+                'status': traj['status'].value,
+                'progress': traj['progress'],
+                'current_waypoint': traj['current_waypoint'],
+                'total_waypoints': traj['total_waypoints'],
+                'started_at': traj['started_at'],
+                'completed_at': traj['completed_at'],
+                'result': traj['result'],
+                'error': traj['error']
+            }
+
+    def cancel_trajectory(self, trajectory_id: str) -> Dict:
+        """
+        Cancel an async trajectory execution.
+
+        Args:
+            trajectory_id: The trajectory ID to cancel
+
+        Returns:
+            Dictionary with success status and message
+        """
+        with self.trajectory_lock:
+            if trajectory_id not in self.active_trajectories:
+                return {
+                    'success': False,
+                    'error': 'Trajectory not found'
+                }
+
+            traj = self.active_trajectories[trajectory_id]
+
+            # Check if already completed
+            if traj['status'] in [TrajectoryStatus.COMPLETED, TrajectoryStatus.FAILED, TrajectoryStatus.CANCELED]:
+                return {
+                    'success': False,
+                    'error': f'Trajectory already {traj["status"].value}',
+                    'status': traj['status'].value
+                }
+
+        # Set cancel flag
+        if trajectory_id in self.cancel_flags:
+            self.cancel_flags[trajectory_id].set()
+            print(f"[ArmController] Cancellation requested for trajectory {trajectory_id}")
+            return {
+                'success': True,
+                'message': 'Trajectory cancellation requested',
+                'trajectory_id': trajectory_id
+            }
+        else:
+            return {
+                'success': False,
+                'error': 'Cancel flag not found - trajectory may have completed'
+            }
+
+    def list_trajectories(self) -> Dict:
+        """
+        List all tracked trajectories (active and completed).
+
+        Returns:
+            Dictionary with list of trajectory summaries
+        """
+        with self.trajectory_lock:
+            trajectories = []
+            for traj_id, traj in self.active_trajectories.items():
+                trajectories.append({
+                    'trajectory_id': traj_id,
+                    'status': traj['status'].value,
+                    'progress': traj['progress'],
+                    'current_waypoint': traj['current_waypoint'],
+                    'total_waypoints': traj['total_waypoints'],
+                    'started_at': traj['started_at'],
+                    'completed_at': traj['completed_at']
+                })
+
+            return {
+                'success': True,
+                'trajectories': trajectories,
+                'count': len(trajectories)
+            }
+
     def get_arm_state(self) -> Dict:
         """
         Get current arm state and position.
