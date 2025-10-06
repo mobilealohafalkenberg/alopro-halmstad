@@ -1,0 +1,80 @@
+<mujoco model="aloha_single_arm">
+  <compiler meshdir="assets"/>
+
+  <asset>
+    <material name="black" rgba="0.15 0.15 0.15 1"/>
+    <material name="silver" rgba="0.8 0.8 0.8 1"/>
+
+    <!-- Robot arm meshes -->
+    <mesh file="vx300s_1_base.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_2_shoulder.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_3_upper_arm.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_4_upper_forearm.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_5_lower_forearm.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_6_wrist.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_7_gripper_prop.stl" scale="0.001 0.001 0.001"/>
+
+    <!-- Table meshes -->
+    <mesh file="tablelegs.obj"/>
+    <mesh file="tabletop.obj"/>
+
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 2.5"/>
+    <geom name="floor" size="2 2 0.05" type="plane" material="groundplane" pos="0 0 -0.75"/>
+
+    <!-- Table -->
+    <geom mesh="tabletop" material="groundplane" pos="0 0 -0.75" quat="1 0 0 1"/>
+    <geom mesh="tablelegs" material="groundplane" pos="0 0 -0.75" quat="1 0 0 1"/>
+
+    <!-- Single Left Arm (7 DOF total) -->
+    <body name="left_arm" pos="-0.28 -0.12 0.02">
+      <geom type="mesh" mesh="vx300s_1_base" material="black"/>
+
+      <!-- Waist -->
+      <body name="waist" pos="0 0 0.079">
+        <inertial pos="0 0 0" mass="0.5" diaginertia="0.001 0.001 0.001"/>
+        <joint name="waist" type="hinge" axis="0 0 1" range="-180 180"/>
+        <geom type="mesh" mesh="vx300s_2_shoulder" material="black"/>
+
+        <!-- Shoulder -->
+        <body name="shoulder" pos="0 0 0.04805">
+          <inertial pos="0 0 0.1" mass="0.8" diaginertia="0.002 0.002 0.001"/>
+          <joint name="shoulder" type="hinge" axis="0 1 0" range="-106 72"/>
+          <geom type="mesh" mesh="vx300s_3_upper_arm" material="black"/>
+
+          <!-- Elbow -->
+          <body name="elbow" pos="0.05955 0 0.2">
+            <inertial pos="0.1 0 0" mass="0.6" diaginertia="0.0015 0.0015 0.0008"/>
+            <joint name="elbow" type="hinge" axis="0 1 0" range="-101 92"/>
+            <geom type="mesh" mesh="vx300s_4_upper_forearm" material="black"/>
+
+            <!-- Forearm roll -->
+            <body name="forearm_roll" pos="0.2 0 0">
+              <inertial pos="0.033 0 0" mass="0.4" diaginertia="0.001 0.001 0.0005"/>
+              <joint name="forearm_roll" type="hinge" axis="1 0 0" range="-180 180"/>
+              <geom type="mesh" mesh="vx300s_5_lower_forearm" material="black"/>
+
+              <!-- Wrist angle -->
+              <body name="wrist_angle" pos="0.065 0 0">
+                <inertial pos="0.03 0 0" mass="0.2" diaginertia="0.0005 0.0005 0.0003"/>
+                <joint name="wrist_angle" type="hinge" axis="0 1 0" range="-107 128"/>
+                <geom type="mesh" mesh="vx300s_6_wrist" material="black"/>
+
+                <!-- Wrist rotate -->
+                <body name="wrist_rotate" pos="0.06025 0 0">
+                  <inertial pos="0.012 0 0" mass="0.15" diaginertia="0.0003 0.0003 0.0002"/>
+                  <joint name="wrist_rotate" type="hinge" axis="1 0 0" range="-180 180"/>
+                  <geom type="mesh" mesh="vx300s_7_gripper_prop" material="black"/>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

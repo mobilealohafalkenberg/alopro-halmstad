@@ -1,0 +1,25 @@
+# MuJoCo Simulation Server Dependencies
+
+# Core server
+flask==3.0.0
+flask-socketio==5.3.6
+flask-cors==4.0.0
+python-socketio==5.11.0
+
+# MuJoCo and physics
+mujoco==3.2.5
+
+# Image processing
+opencv-python==4.10.0.84
+numpy==1.26.4
+
+# Gemini bridge dependencies
+aiohttp==3.9.1
+aiohttp-cors==0.7.0
+
+# Real robot support (optional - only for mode='real')
+# Uncomment if you plan to use real robot mode:
+# interbotix-xs-modules>=0.3.0
+
+# Utilities
+python-dotenv==1.0.0

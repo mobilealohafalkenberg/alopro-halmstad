@@ -1,0 +1,172 @@
+<mujoco model="aloha_simple">
+  <compiler meshdir="assets"/>
+
+  <asset>
+    <!-- Materials -->
+    <material name="black" rgba="0.15 0.15 0.15 1"/>
+    <material name="silver" rgba="0.8 0.8 0.8 1"/>
+
+    <!-- Robot arm meshes -->
+    <mesh file="vx300s_1_base.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_2_shoulder.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_3_upper_arm.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_4_upper_forearm.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_5_lower_forearm.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_6_wrist.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_7_gripper_prop.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_7_gripper_bar.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_8_custom_finger_left.stl" scale="0.001 0.001 0.001"/>
+    <mesh file="vx300s_8_custom_finger_right.stl" scale="0.001 0.001 0.001"/>
+
+    <!-- Table meshes -->
+    <mesh file="tablelegs.obj"/>
+    <mesh file="tabletop.obj"/>
+
+    <!-- Textures and materials -->
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 2.5"/>
+    <geom name="floor" size="2 2 0.05" type="plane" material="groundplane" pos="0 0 -0.75"/>
+
+    <!-- Table -->
+    <geom mesh="tabletop" material="groundplane" pos="0 0 -0.75" quat="1 0 0 1"/>
+    <geom mesh="tablelegs" material="groundplane" pos="0 0 -0.75" quat="1 0 0 1"/>
+
+    <!-- Left Arm -->
+    <body name="left_arm" pos="-0.28 -0.12 0.02">
+      <geom type="mesh" mesh="vx300s_1_base" material="black"/>
+
+      <!-- Waist joint -->
+      <body name="left_waist" pos="0 0 0.079">
+        <inertial pos="0 0 0" mass="0.5" diaginertia="0.001 0.001 0.001"/>
+        <joint name="left/waist" type="hinge" axis="0 0 1" range="-180 180" damping="0.5"/>
+        <geom type="mesh" mesh="vx300s_2_shoulder" material="black"/>
+
+        <!-- Shoulder joint -->
+        <body name="left_shoulder" pos="0 0 0.04805">
+          <inertial pos="0 0 0.1" mass="0.8" diaginertia="0.002 0.002 0.001"/>
+          <joint name="left/shoulder" type="hinge" axis="0 1 0" range="-106 72" damping="0.5"/>
+          <geom type="mesh" mesh="vx300s_3_upper_arm" material="black"/>
+
+          <!-- Elbow joint -->
+          <body name="left_elbow" pos="0.05955 0 0.2">
+            <inertial pos="0.1 0 0" mass="0.6" diaginertia="0.0015 0.0015 0.0008"/>
+            <joint name="left/elbow" type="hinge" axis="0 1 0" range="-101 92" damping="0.5"/>
+            <geom type="mesh" mesh="vx300s_4_upper_forearm" material="black"/>
+
+            <!-- Forearm roll joint -->
+            <body name="left_forearm_roll" pos="0.2 0 0">
+              <inertial pos="0.033 0 0" mass="0.4" diaginertia="0.001 0.001 0.0005"/>
+              <joint name="left/forearm_roll" type="hinge" axis="1 0 0" range="-180 180" damping="0.1"/>
+              <geom type="mesh" mesh="vx300s_5_lower_forearm" material="black"/>
+
+              <!-- Wrist angle joint -->
+              <body name="left_wrist_angle" pos="0.065 0 0">
+                <inertial pos="0.03 0 0" mass="0.2" diaginertia="0.0005 0.0005 0.0003"/>
+                <joint name="left/wrist_angle" type="hinge" axis="0 1 0" range="-107 128" damping="0.1"/>
+                <geom type="mesh" mesh="vx300s_6_wrist" material="black"/>
+
+                <!-- Wrist rotate joint -->
+                <body name="left_wrist_rotate" pos="0.06025 0 0">
+                  <inertial pos="0.012 0 0" mass="0.15" diaginertia="0.0003 0.0003 0.0002"/>
+                  <joint name="left/wrist_rotate" type="hinge" axis="1 0 0" range="-180 180" damping="0.1"/>
+                  <geom type="mesh" mesh="vx300s_7_gripper_prop" material="black"/>
+
+                  <!-- Gripper -->
+                  <body name="left_gripper" pos="0.024 0 0">
+                    <inertial pos="0.01 0 0" mass="0.1" diaginertia="0.0002 0.0002 0.0001"/>
+                    <geom type="mesh" mesh="vx300s_7_gripper_bar" material="silver"/>
+
+                    <!-- Left finger -->
+                    <body name="left_left_finger" pos="0.0155 0 0">
+                      <inertial pos="0.01 0 0" mass="0.05" diaginertia="0.0001 0.0001 0.00005"/>
+                      <joint name="left/left_finger" type="hinge" axis="0 1 0" range="0 50" damping="0.01"/>
+                      <geom type="mesh" mesh="vx300s_8_custom_finger_left" material="black"/>
+                    </body>
+
+                    <!-- Right finger -->
+                    <body name="left_right_finger" pos="0.0155 0 0">
+                      <inertial pos="0.01 0 0" mass="0.05" diaginertia="0.0001 0.0001 0.00005"/>
+                      <joint name="left/right_finger" type="hinge" axis="0 -1 0" range="0 50" damping="0.01"/>
+                      <geom type="mesh" mesh="vx300s_8_custom_finger_right" material="black"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Right Arm -->
+    <body name="right_arm" pos="0.28 -0.12 0.02">
+      <geom type="mesh" mesh="vx300s_1_base" material="black"/>
+
+      <!-- Waist joint -->
+      <body name="right_waist" pos="0 0 0.079">
+        <inertial pos="0 0 0" mass="0.5" diaginertia="0.001 0.001 0.001"/>
+        <joint name="right/waist" type="hinge" axis="0 0 1" range="-180 180" damping="0.5"/>
+        <geom type="mesh" mesh="vx300s_2_shoulder" material="black"/>
+
+        <!-- Shoulder joint -->
+        <body name="right_shoulder" pos="0 0 0.04805">
+          <inertial pos="0 0 0.1" mass="0.8" diaginertia="0.002 0.002 0.001"/>
+          <joint name="right/shoulder" type="hinge" axis="0 1 0" range="-106 72" damping="0.5"/>
+          <geom type="mesh" mesh="vx300s_3_upper_arm" material="black"/>
+
+          <!-- Elbow joint -->
+          <body name="right_elbow" pos="0.05955 0 0.2">
+            <inertial pos="0.1 0 0" mass="0.6" diaginertia="0.0015 0.0015 0.0008"/>
+            <joint name="right/elbow" type="hinge" axis="0 1 0" range="-101 92" damping="0.5"/>
+            <geom type="mesh" mesh="vx300s_4_upper_forearm" material="black"/>
+
+            <!-- Forearm roll joint -->
+            <body name="right_forearm_roll" pos="0.2 0 0">
+              <inertial pos="0.033 0 0" mass="0.4" diaginertia="0.001 0.001 0.0005"/>
+              <joint name="right/forearm_roll" type="hinge" axis="1 0 0" range="-180 180" damping="0.1"/>
+              <geom type="mesh" mesh="vx300s_5_lower_forearm" material="black"/>
+
+              <!-- Wrist angle joint -->
+              <body name="right_wrist_angle" pos="0.065 0 0">
+                <inertial pos="0.03 0 0" mass="0.2" diaginertia="0.0005 0.0005 0.0003"/>
+                <joint name="right/wrist_angle" type="hinge" axis="0 1 0" range="-107 128" damping="0.1"/>
+                <geom type="mesh" mesh="vx300s_6_wrist" material="black"/>
+
+                <!-- Wrist rotate joint -->
+                <body name="right_wrist_rotate" pos="0.06025 0 0">
+                  <inertial pos="0.012 0 0" mass="0.15" diaginertia="0.0003 0.0003 0.0002"/>
+                  <joint name="right/wrist_rotate" type="hinge" axis="1 0 0" range="-180 180" damping="0.1"/>
+                  <geom type="mesh" mesh="vx300s_7_gripper_prop" material="black"/>
+
+                  <!-- Gripper -->
+                  <body name="right_gripper" pos="0.024 0 0">
+                    <inertial pos="0.01 0 0" mass="0.1" diaginertia="0.0002 0.0002 0.0001"/>
+                    <geom type="mesh" mesh="vx300s_7_gripper_bar" material="silver"/>
+
+                    <!-- Left finger -->
+                    <body name="right_left_finger" pos="0.0155 0 0">
+                      <inertial pos="0.01 0 0" mass="0.05" diaginertia="0.0001 0.0001 0.00005"/>
+                      <joint name="right/left_finger" type="hinge" axis="0 1 0" range="0 50" damping="0.01"/>
+                      <geom type="mesh" mesh="vx300s_8_custom_finger_left" material="black"/>
+                    </body>
+
+                    <!-- Right finger -->
+                    <body name="right_right_finger" pos="0.0155 0 0">
+                      <inertial pos="0.01 0 0" mass="0.05" diaginertia="0.0001 0.0001 0.00005"/>
+                      <joint name="right/right_finger" type="hinge" axis="0 -1 0" range="0 50" damping="0.01"/>
+                      <geom type="mesh" mesh="vx300s_8_custom_finger_right" material="black"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

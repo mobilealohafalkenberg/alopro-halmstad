@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-This repository contains three separate projects for controlling a Mobile ALOHA robot system:
+This repository contains four separate projects for controlling a Mobile ALOHA robot system:
 
 1. **gemini-live/** - Voice-controlled robot system using Gemini 2.5 Live API
 2. **live-api-web-console/** - React-based starter app for Gemini Live API websocket
 3. **python_scripts/** - Python utilities using google-genai library
+4. **virtual-robot-arm/** - 3D virtual robot arm simulator with voice control
 
 ## Key Commands
 
@@ -55,6 +56,31 @@ npm install       # Install dependencies
 npm start         # Start dev server
 npm run build     # Build for production
 ```
+
+### Virtual Robot Arm Simulator (virtual-robot-arm/)
+
+```bash
+npm install       # Install dependencies
+npm start         # Start dev server on port 3000
+npm run build     # Build for production
+
+# Or use quick start script
+./start.sh        # Automated setup and launch
+```
+
+**Key Features:**
+- 3D visualization of ViperX 300s robot arm
+- Voice control via Gemini 2.5 Live API
+- Interactive scene with table, apple, and cube
+- Realistic kinematics and smooth animations
+- No hardware required - runs in browser
+
+**Setup:**
+1. Copy `.env.example` to `.env`
+2. Add your `REACT_APP_GEMINI_API_KEY`
+3. Run `npm install && npm start`
+
+See `virtual-robot-arm/SETUP_GUIDE.md` for detailed instructions.
 
 ### Python Scripts (python_scripts/)
 
