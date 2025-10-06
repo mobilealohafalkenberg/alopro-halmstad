@@ -27,16 +27,20 @@ npm start
 
 **Testing Python components:**
 ```bash
+# All tests are organized in gemini-live/test/ directory
+cd gemini-live/test
+
 # Test arm controller
-python3 test_arm_controller.py
+python3 test_arm_controller/test_arm_controller.py
 
 # Test trajectory bridge
-python3 test_trajectory_bridge.py  
+python3 test_trajectory_bridge/test_trajectory_bridge.py
 
 # Test gripper directly
-python3 example_gemini_integration.py
+python3 test_gripper/example_gemini_integration.py
 
-# Launch robot driver only
+# Launch robot driver only (from gemini-live-api-control/)
+cd ../gemini-live-api-control
 ./minimal_launch.sh
 ```
 
@@ -135,8 +139,42 @@ Standard control:
 
 ## Testing and Validation
 
+### Test Directory Structure
+
+All tests are organized under `gemini-live/test/` with subdirectories named after the component being tested:
+
+```
+gemini-live/test/
+├── test_arm_controller/
+│   └── test_arm_controller.py
+├── test_trajectory_bridge/
+│   └── test_trajectory_bridge.py
+├── test_gripper/
+│   └── example_gemini_integration.py
+└── test_camera/
+    └── test_camera_controller.py
+```
+
+**Creating New Tests:**
+- Create a subdirectory under `gemini-live/test/` named `test_<component>`
+- Place test files within that subdirectory
+- Example: Testing safety_validator → `gemini-live/test/test_safety_validator/test_safety_validator.py`
+
+**Running Tests:**
+```bash
+# Navigate to test directory
+cd gemini-live/test
+
+# Run specific component test
+python3 test_arm_controller/test_arm_controller.py
+python3 test_gripper/example_gemini_integration.py
+python3 test_trajectory_bridge/test_trajectory_bridge.py
+```
+
+### Validation Checklist
+
 When making changes:
-1. Test individual controllers with their test_*.py files
+1. Test individual controllers with their respective test files in `gemini-live/test/`
 2. Verify bridge connectivity: `curl http://localhost:8081/status`
 3. Check voice capture via UI volume indicators
 4. Monitor browser console for tool call events
@@ -280,7 +318,8 @@ Fixed critical thread safety issue...
 
 Before committing:
 - [ ] Code follows existing style and conventions
-- [ ] All tests pass (run relevant test_*.py files)
+- [ ] All tests pass (run relevant tests from `gemini-live/test/`)
+- [ ] New tests created in appropriate `gemini-live/test/test_<component>/` directory if needed
 - [ ] CHANGELOG.md updated with detailed entry
 - [ ] No sensitive data (API keys, passwords) in commits
 - [ ] Thread safety considered for concurrent operations

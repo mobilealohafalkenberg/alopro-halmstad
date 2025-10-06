@@ -7,6 +7,9 @@ Tests automatic unit detection and coordinate conversions.
 
 import time
 import sys
+import os
+# Add parent directory to path to import controllers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from arm_controller import ArmController
 
 def test_arm_controller():
