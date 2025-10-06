@@ -185,16 +185,21 @@ class ArmController:
                 try:
                     # Get current joint positions
                     with self.bot.core.js_mutex:
-                        self.current_joints = list(self.bot.arm.get_joint_commands())
-                    
+                        joints = list(self.bot.arm.get_joint_commands())
+
                     # Get end effector pose
-                    self.current_ee_pose = self.bot.arm.get_ee_pose()
-                    
+                    ee_pose = self.bot.arm.get_ee_pose()
+
+                    # Update shared state with lock protection
+                    with self.state_lock:
+                        self.current_joints = joints
+                        self.current_ee_pose = ee_pose
+
                 except Exception:
                     pass  # Silently ignore errors in monitor thread
-                
+
                 time.sleep(0.1)  # Check 10 times per second
-        
+
         monitor_thread = threading.Thread(target=monitor, daemon=True)
         monitor_thread.start()
     
