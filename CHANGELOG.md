@@ -87,6 +87,151 @@ All accesses to `self.current_joints` are now properly protected:
 
 ---
 
+### Task 1.4: Apply Dry-Run Mode to All Movement Methods
+
+**Date**: 2025-10-06
+**Task ID**: 1.4
+**Task Name**: Apply Dry-Run Mode to All Movement Methods
+**Author**: anugraha09
+**Branch**: `fix/race-condition-position-monitoring`
+
+#### Summary
+Extended dry-run mode support to all movement methods in the arm controller. Previously, the `dry_run` flag was only checked in `move_to_position()` (lines 474-482) but not in `move_joints()` or `move_to_pose()`. This incomplete implementation reduced the effectiveness of dry-run mode for comprehensive system testing without robot hardware. Now all movement methods respect the dry-run flag and provide validation without executing robot commands.
+
+#### Changes Made
+1. Added dry-run check to `move_joints()` method (after safety validation)
+2. Added dry-run check and logging to `move_to_pose()` method
+3. Ensured safety checks always run before dry-run checks in all methods
+4. Updated return messages to consistently indicate "dry_run" state
+5. All dry-run returns include descriptive messages and target values
+
+#### Technical Details
+
+**Dry-Run Check Order (Consistent Across All Methods):**
+```
+1. Parse/validate input parameters
+2. Run safety checks (ALWAYS execute, even in dry-run)
+3. Check dry_run flag
+   - If True: Return validation result without executing
+   - If False: Proceed with robot commands
+```
+
+**move_joints() Dry-Run Implementation:**
+```python
+# Safety check before movement
+is_safe, warning = self.check_safety_constraints(angles_rad)
+if not is_safe:
+    return {"success": False, "error": f"Safety constraint violated: {warning}"}
+
+# If dry run mode, don't execute actual movement
+if self.dry_run:
+    print(f"[ArmController] DRY RUN: Would move to joint positions: {angles}")
+    return {
+        "success": True,
+        "state": "dry_run",
+        "target_joints": angles_rad,
+        "target_joints_degrees": angles_deg,
+        "message": "Dry run - movement validated but not executed"
+    }
+```
+
+**move_to_pose() Dry-Run Implementation:**
+```python
+# Safety check the named pose
+is_safe, warning = self.check_safety_constraints(pose_joints)
+
+# If dry run mode, log and delegate to move_joints (which handles dry-run)
+if self.dry_run:
+    print(f"[ArmController] DRY RUN: Would move to {pose_name} pose")
+else:
+    print(f"[ArmController] Moving to {pose_name} pose")
+
+# move_joints() will handle the actual dry-run logic
+result = self.move_joints(pose_joints, unit='radians', ...)
+```
+
+**move_to_position() (Already Implemented):**
+- Dry-run check already existed at lines 493-501
+- No changes needed, verified it follows same pattern
+- Safety checks run before dry-run check ✓
+
+#### Impact
+- **Complete Testing Coverage**: All movement methods can now be tested without hardware
+- **Safety Validation**: Safety checks still run in dry-run mode, catching issues early
+- **Consistent Behavior**: All methods follow same dry-run pattern
+- **Development Efficiency**: Enables full system testing on development machines
+- **CI/CD Ready**: Facilitates automated testing without robot hardware
+- **Backward Compatible**: No changes to existing API, only internal behavior
+
+#### Files Modified
+- `gemini-live/arm_controller.py`:
+  - Lines 421-431: Added dry-run check to `move_joints()`
+  - Lines 613-630: Added dry-run logging to `move_to_pose()`
+- `gemini-live/test_dry_run_mode.py`: Comprehensive test suite (new file)
+
+#### Dry-Run State Returns
+
+All methods now return consistent dry-run state information:
+
+```python
+# move_joints() dry-run return
+{
+    "success": True,
+    "state": "dry_run",
+    "target_joints": [0.0, -0.5, 1.0, 0.0, -0.5, 0.0],
+    "target_joints_degrees": [0.0, -28.6, 57.3, 0.0, -28.6, 0.0],
+    "message": "Dry run - movement validated but not executed"
+}
+
+# move_to_position() dry-run return
+{
+    "success": True,
+    "state": "dry_run",
+    "target_position": {"x": 0.3, "y": 0.0, "z": 0.2},
+    "safety": {...},
+    "message": "Dry run - movement validated but not executed"
+}
+
+# move_to_pose() dry-run return
+# (delegates to move_joints, returns its dry-run state)
+```
+
+#### Testing Recommendations
+1. Run `test_dry_run_mode.py` to verify all methods respect dry-run flag
+2. Test that safety checks block invalid movements even in dry-run
+3. Verify trajectory execution works in dry-run mode
+4. Test with and without safety validator enabled
+5. Confirm state tracking doesn't update robot hardware in dry-run
+6. Validate log messages clearly indicate dry-run vs actual execution
+
+#### Test Coverage
+
+The test suite (`test_dry_run_mode.py`) validates:
+- ✓ `move_joints()` with safe and unsafe positions
+- ✓ `move_to_position()` with safe and unsafe positions
+- ✓ `move_to_pose()` with all named poses
+- ✓ `execute_trajectory()` with valid and invalid trajectories
+- ✓ Safety checks block unsafe movements in dry-run
+- ✓ Workspace limits enforced in dry-run
+- ✓ Consistent state returns across all methods
+
+#### Benefits for Development
+
+**Before (Incomplete Dry-Run):**
+- Only `move_to_position()` could be tested without hardware
+- `move_joints()` and `move_to_pose()` required actual robot
+- Trajectory testing required hardware setup
+- Limited CI/CD testing capabilities
+
+**After (Complete Dry-Run):**
+- All movement methods testable without hardware
+- Complete trajectory validation without robot
+- Full system testing on developer machines
+- CI/CD pipeline can run comprehensive tests
+- Faster development iteration cycles
+
+---
+
 ### Task 1.8: Add Async Trajectory Execution Option
 
 **Date**: 2025-10-06

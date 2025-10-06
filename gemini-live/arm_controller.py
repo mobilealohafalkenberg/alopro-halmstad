@@ -417,12 +417,24 @@ class ArmController:
                 with self.state_lock:
                     self.current_state = ArmState.ERROR
                 return {"success": False, "error": f"Safety constraint violated: {warning}", "state": "error"}
-            
+
+            # If dry run mode, don't execute actual movement
+            if self.dry_run:
+                print(f"[ArmController] DRY RUN: Would move to joint positions: {[f'{a:.3f}' for a in angles_rad]}")
+                angles_deg = [math.degrees(a) for a in angles_rad]
+                return {
+                    "success": True,
+                    "state": "dry_run",
+                    "target_joints": angles_rad,
+                    "target_joints_degrees": angles_deg,
+                    "message": "Dry run - movement validated but not executed"
+                }
+
             with self.state_lock:
                 self.current_state = ArmState.MOVING
-            
+
             print(f"[ArmController] Moving to joints: {[f'{a:.3f}' for a in angles_rad]}")
-            
+
             # Use InterbotixArmXSInterface method
             success = self.bot.arm.set_joint_positions(
                 angles_rad,
@@ -591,27 +603,32 @@ class ArmController:
         if pose_name not in self.POSES:
             return {"success": False, "error": f"Unknown pose: {pose_name}", "state": "error"}
         
-        print(f"[ArmController] Moving to {pose_name} pose")
-        
         # Safety check the named pose (these should always be safe, but check anyway)
         pose_joints = self.POSES[pose_name]
         is_safe, warning = self.check_safety_constraints(pose_joints)
         if not is_safe:
             print(f"[ArmController] ⚠️ WARNING: Named pose '{pose_name}' failed safety check: {warning}")
             # Still allow named poses but log the warning
-        
+
+        # If dry run mode, log and delegate to move_joints (which handles dry-run)
+        if self.dry_run:
+            print(f"[ArmController] DRY RUN: Would move to {pose_name} pose")
+        else:
+            print(f"[ArmController] Moving to {pose_name} pose")
+
         # Update state based on target pose
         target_state = {
             'home': ArmState.AT_HOME,
             'sleep': ArmState.AT_SLEEP,
             'ready': ArmState.IDLE
         }.get(pose_name, ArmState.AT_TARGET)
-        
+
         # Use slower movement for sleep and home positions if not specified
         if moving_time is None and pose_name in ['sleep', 'home']:
             moving_time = 3.0  # 3 seconds for slow, safe transition
-            print(f"[ArmController] Using slow transition ({moving_time}s) for {pose_name} pose")
-        
+            if not self.dry_run:
+                print(f"[ArmController] Using slow transition ({moving_time}s) for {pose_name} pose")
+
         result = self.move_joints(
             pose_joints,
             unit='radians',
