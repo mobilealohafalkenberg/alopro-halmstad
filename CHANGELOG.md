@@ -87,6 +87,136 @@ All accesses to `self.current_joints` are now properly protected:
 
 ---
 
+### Task 1.5: Convert Magic Numbers to Named Constants
+
+**Date**: 2025-10-06
+**Task ID**: 1.5
+**Task Name**: Convert Magic Numbers to Named Constants
+**Author**: anugraha09
+**Branch**: `fix/race-condition-position-monitoring`
+
+#### Summary
+Converted all hardcoded rotation limit values (magic numbers) in the safety constraint checking code to named constants in the SAFETY_CONSTRAINTS dictionary. Previously, line 253 contained `math.radians(120)` and several other locations had similar hardcoded values, reducing code readability and making safety parameters difficult to tune. All rotation limits are now centralized and well-documented.
+
+#### Changes Made
+1. Added `max_safe_wrist_rotation` constant to SAFETY_CONSTRAINTS (line 84)
+2. Replaced `math.radians(120)` with `self.SAFETY_CONSTRAINTS['max_safe_wrist_rotation']` (line 256)
+3. Added additional rotation limit constants discovered during refactoring:
+   - `wrist_rotate_limit_when_down_at_base`: math.radians(20) - Very restricted when down near base
+   - `wrist_rotate_limit_at_table_level`: math.radians(60) - Prevents camera collision at low positions
+   - `dangerous_shoulder_back_threshold`: math.radians(-90) - Shoulder back threshold for dangerous combo
+   - `dangerous_elbow_extended_threshold`: math.radians(80) - Elbow extended threshold for dangerous combo
+   - `dangerous_wrist_rotation_threshold`: math.radians(90) - Wrist rotation threshold in dangerous combo
+4. Updated all safety check code to reference constants instead of magic numbers
+5. Enhanced error messages to include actual limit values using the constants
+
+#### Technical Details
+
+**Before (Magic Numbers):**
+```python
+# Line 253
+max_safe_rotation = math.radians(120)  # Absolute maximum safe rotation
+
+# Line 290
+if abs(wrist_rotate) > math.radians(20):
+
+# Lines 296-298
+if (shoulder < math.radians(-90) and
+    elbow > math.radians(80) and
+    abs(wrist_rotate) > math.radians(90)):
+
+# Line 304
+if abs(wrist_rotate) > math.radians(60):
+```
+
+**After (Named Constants):**
+```python
+# SAFETY_CONSTRAINTS dictionary (lines 82-109)
+SAFETY_CONSTRAINTS = {
+    'max_safe_wrist_rotation': math.radians(120),  # Absolute maximum safe rotation ±120°
+    'wrist_rotate_limit_when_down_at_base': math.radians(20),  # Very restricted when down near base
+    'wrist_rotate_limit_at_table_level': math.radians(60),  # Rotation limit at low position
+    'dangerous_shoulder_back_threshold': math.radians(-90),  # Shoulder back threshold
+    'dangerous_elbow_extended_threshold': math.radians(80),  # Elbow extended threshold
+    'dangerous_wrist_rotation_threshold': math.radians(90),  # Wrist rotation in dangerous combo
+    # ... other existing constraints
+}
+
+# Usage in code (line 256)
+max_safe_rotation = self.SAFETY_CONSTRAINTS['max_safe_wrist_rotation']
+
+# Usage in safety checks (line 297)
+max_rotation = self.SAFETY_CONSTRAINTS['wrist_rotate_limit_when_down_at_base']
+
+# Usage in dangerous combination check (lines 305-307)
+if (shoulder < self.SAFETY_CONSTRAINTS['dangerous_shoulder_back_threshold'] and
+    elbow > self.SAFETY_CONSTRAINTS['dangerous_elbow_extended_threshold'] and
+    abs(wrist_rotate) > self.SAFETY_CONSTRAINTS['dangerous_wrist_rotation_threshold']):
+```
+
+#### Impact
+- **Improved Readability**: Constants have descriptive names explaining their purpose
+- **Easier Tuning**: All safety parameters centralized in one location
+- **Better Maintainability**: Changes to limits only need to be made in one place
+- **Enhanced Documentation**: Comments in SAFETY_CONSTRAINTS explain each limit
+- **Better Error Messages**: Messages now include actual limit values dynamically
+- **Consistency**: All rotation limits follow same pattern
+- **No Functional Changes**: Robot behavior unchanged, only code organization improved
+
+#### Files Modified
+- `gemini-live/arm_controller.py`:
+  - Lines 84, 98, 103, 106-108: Added new constants to SAFETY_CONSTRAINTS
+  - Line 256: Replaced magic number with constant reference
+  - Lines 297-298: Replaced magic number with constant reference
+  - Lines 305-307: Replaced magic numbers with constant references
+  - Lines 312-317: Replaced magic number with constant reference
+
+#### All Safety Constraint Constants
+
+**Rotation Limits:**
+- `max_safe_wrist_rotation`: 120° - Absolute maximum (prevents cable/camera damage)
+- `wrist_rotate_limit_when_close`: 30° - When close to base
+- `wrist_rotate_limit_when_down_at_base`: 20° - Very restricted when pointing down near base
+- `wrist_rotate_limit_when_low`: 45° - When at low z position
+- `wrist_rotate_limit_at_table_level`: 60° - At table level (prevents camera collision)
+
+**Joint Angle Limits:**
+- `min_shoulder_angle`: -110° - Minimum shoulder angle (prevents folding too far back)
+- `max_elbow_angle`: 100° - Maximum elbow angle (prevents over-extension)
+- `wrist_angle_down_threshold`: -45° - Threshold for wrist pointing down
+
+**Dangerous Combination Thresholds:**
+- `dangerous_shoulder_back_threshold`: -90° - Shoulder back in dangerous combo
+- `dangerous_elbow_extended_threshold`: 80° - Elbow extended in dangerous combo
+- `dangerous_wrist_rotation_threshold`: 90° - Wrist rotation in dangerous combo
+
+**Distance Thresholds:**
+- `close_to_base_x_threshold`: 0.15m
+- `close_to_base_y_threshold`: 0.10m
+- `safe_distance_from_base`: 0.25m
+- `low_z_threshold`: 0.15m
+
+#### Benefits for Safety Tuning
+
+**Scenario: Robot hitting obstacle at low position**
+
+Before: Search through code for all instances of rotation limits, modify each individually
+After: Simply adjust `wrist_rotate_limit_at_table_level` in SAFETY_CONSTRAINTS dictionary
+
+**Scenario: Need to make robot more/less conservative**
+
+Before: Find and modify hardcoded values scattered throughout the code
+After: All limits in one centralized location with clear documentation
+
+#### Testing Recommendations
+1. Verify robot behavior unchanged with new constants
+2. Test all safety checks still trigger correctly
+3. Validate error messages include correct limit values
+4. Test tuning a limit (e.g., change from 120° to 110°) affects behavior as expected
+5. Confirm dry-run mode still validates using constants correctly
+
+---
+
 ### Task 1.4: Apply Dry-Run Mode to All Movement Methods
 
 **Date**: 2025-10-06

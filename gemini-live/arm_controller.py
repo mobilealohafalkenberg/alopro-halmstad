@@ -80,22 +80,32 @@ class ArmController:
     
     # Safety constraints to prevent self-collision
     SAFETY_CONSTRAINTS = {
+        # Absolute maximum wrist rotation limit (prevents cable/camera damage)
+        'max_safe_wrist_rotation': math.radians(120),  # Absolute maximum safe rotation ±120°
+
         # If end effector is close to base (x < threshold), limit wrist rotation
         'close_to_base_x_threshold': 0.15,  # meters
         'close_to_base_y_threshold': 0.10,  # meters
         'wrist_rotate_limit_when_close': math.radians(30),  # Max ±30° when close to base
-        
+
         # Dangerous joint combinations to avoid
         'min_shoulder_angle': math.radians(-110),  # Don't fold too far back
         'max_elbow_angle': math.radians(100),      # Don't over-extend elbow
-        
+
         # When gripper is pointing down and close to base, restrict rotation
         'wrist_angle_down_threshold': math.radians(-45),  # Wrist pointing down
         'safe_distance_from_base': 0.25,  # meters - minimum safe distance for full rotation
-        
+        'wrist_rotate_limit_when_down_at_base': math.radians(20),  # Very restricted when down near base
+
         # Additional constraints for low z positions
         'low_z_threshold': 0.15,  # meters - when gripper is low
         'wrist_rotate_limit_when_low': math.radians(45),  # Max rotation when low
+        'wrist_rotate_limit_at_table_level': math.radians(60),  # Rotation limit at low position to prevent camera collision
+
+        # Dangerous combination thresholds
+        'dangerous_shoulder_back_threshold': math.radians(-90),  # Shoulder back threshold
+        'dangerous_elbow_extended_threshold': math.radians(80),  # Elbow extended threshold
+        'dangerous_wrist_rotation_threshold': math.radians(90),  # Wrist rotation in dangerous combo
     }
     
     def __init__(self, robot_model='vx300s', robot_name='follower_left', node=None, bot=None,
@@ -250,7 +260,7 @@ class ArmController:
         
         # Check 3: Large wrist rotation is ALWAYS dangerous with this robot configuration
         # The camera and cables can get damaged with large rotations
-        max_safe_rotation = math.radians(120)  # Absolute maximum safe rotation
+        max_safe_rotation = self.SAFETY_CONSTRAINTS['max_safe_wrist_rotation']
         if abs(wrist_rotate) > max_safe_rotation:
             return False, (f"Wrist rotation ({math.degrees(wrist_rotate):.1f}°) exceeds safe limit. "
                          f"Max allowed: ±{math.degrees(max_safe_rotation):.1f}°")
@@ -281,26 +291,30 @@ class ArmController:
                                  f"Max allowed: ±{math.degrees(max_rotation):.1f}°")
             
             # Check 4c: Wrist pointing down and close to base
-            if (wrist_angle < self.SAFETY_CONSTRAINTS['wrist_angle_down_threshold'] and 
+            if (wrist_angle < self.SAFETY_CONSTRAINTS['wrist_angle_down_threshold'] and
                 distance_from_base < self.SAFETY_CONSTRAINTS['safe_distance_from_base']):
                 # Extra strict on rotation when pointing down near base
-                if abs(wrist_rotate) > math.radians(20):
+                max_rotation = self.SAFETY_CONSTRAINTS['wrist_rotate_limit_when_down_at_base']
+                if abs(wrist_rotate) > max_rotation:
                     return False, (f"Wrist rotation restricted when pointing down "
                                  f"({math.degrees(wrist_angle):.1f}°) near base. "
+                                 f"Max allowed: ±{math.degrees(max_rotation):.1f}°. "
                                  f"Risk of cable/camera damage")
         
         # Check 5: Dangerous combination - shoulder back + elbow extended + wrist rotated
-        if (shoulder < math.radians(-90) and 
-            elbow > math.radians(80) and 
-            abs(wrist_rotate) > math.radians(90)):
+        if (shoulder < self.SAFETY_CONSTRAINTS['dangerous_shoulder_back_threshold'] and
+            elbow > self.SAFETY_CONSTRAINTS['dangerous_elbow_extended_threshold'] and
+            abs(wrist_rotate) > self.SAFETY_CONSTRAINTS['dangerous_wrist_rotation_threshold']):
             return False, "Dangerous joint combination: shoulder back + elbow extended + wrist rotated"
         
         # Check 6: Specific dangerous configuration when reaching forward at table level
         # This is the configuration that was hitting the camera
-        if (ee_position and ee_position.get('z', 1.0) <= 0.15 and  # Low position
-            abs(wrist_rotate) > math.radians(60)):  # Significant rotation
+        max_rotation_at_table = self.SAFETY_CONSTRAINTS['wrist_rotate_limit_at_table_level']
+        if (ee_position and ee_position.get('z', 1.0) <= self.SAFETY_CONSTRAINTS['low_z_threshold'] and
+            abs(wrist_rotate) > max_rotation_at_table):
             return False, (f"Wrist rotation ({math.degrees(wrist_rotate):.1f}°) restricted "
-                         f"at low position (z={ee_position.get('z', 0):.2f}m) to prevent camera collision")
+                         f"at low position (z={ee_position.get('z', 0):.2f}m). "
+                         f"Max allowed: ±{math.degrees(max_rotation_at_table):.1f}° to prevent camera collision")
         
         return True, ""
     
