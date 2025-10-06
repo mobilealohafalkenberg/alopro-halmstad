@@ -148,3 +148,167 @@ When making changes:
 - **Gripper not moving**: Verify robot power, USB connection, and bridge on 8081
 - **"Load failed" errors**: Normal with fire-and-forget pattern
 - **IK solution errors**: Check target within workspace limits (z ≥ 0.1m)
+
+## Development Workflow
+
+### Git Configuration
+
+**Initial Setup:**
+```bash
+# Configure git identity
+git config --global user.name "your-username"
+git config --global user.email "your-email@example.com"
+
+# Set up SSH key for GitHub
+ssh-keygen -t ed25519 -C "your-email@example.com"
+cat ~/.ssh/id_ed25519.pub  # Copy this to GitHub Settings > SSH Keys
+
+# Test SSH connection
+ssh -T git@github.com
+
+# Add SSH key to agent (to avoid repeated passphrase entry)
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+```
+
+**Repository Setup:**
+```bash
+# Clone repository
+git clone git@github.com:mobilealohafalkenberg/alopro-halmstad.git
+
+# Or set remote URL to SSH
+git remote set-url origin git@github.com:mobilealohafalkenberg/alopro-halmstad.git
+```
+
+### Branching and Committing Changes
+
+**Creating a Feature Branch:**
+```bash
+# Create and switch to new branch
+git checkout -b fix/descriptive-name
+
+# Or branch from specific commit/branch
+git checkout -b feature/new-feature dev
+```
+
+**Making Changes:**
+```bash
+# Check status
+git status
+
+# View changes
+git diff
+
+# Stage specific files
+git add path/to/file.py
+
+# Stage all changes
+git add .
+
+# Commit with descriptive message
+git commit -m "Brief description
+
+Detailed explanation of changes:
+- Change 1
+- Change 2
+- Change 3
+
+Impact: Description of impact
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+```
+
+**Pushing Changes:**
+```bash
+# Push new branch to remote
+git push -u origin fix/descriptive-name
+
+# Push updates to existing branch
+git push
+```
+
+**Merging to Main Branch:**
+```bash
+# Switch to dev branch
+git checkout dev
+
+# Merge feature branch
+git merge fix/descriptive-name
+
+# Push merged changes
+git push origin dev
+
+# Delete local branch (optional)
+git branch -d fix/descriptive-name
+
+# Delete remote branch (optional)
+git push origin --delete fix/descriptive-name
+```
+
+### Documentation Requirements
+
+**CHANGELOG.md:**
+- **MUST** update `CHANGELOG.md` for every bug fix, feature, or significant change
+- Use the template provided in the file
+- Include: Date, Task ID, Summary, Impact, Files Modified, Testing Recommendations
+- Follow task ID numbering: Major (1.0), Sub-tasks (1.1, 1.2), Hotfixes (1.1.1)
+
+**Example Entry:**
+```markdown
+### Task 1.1: Fix Race Condition in Position Monitoring
+
+**Date**: 2025-10-06
+**Task ID**: 1.1
+**Author**: username
+**Branch**: `fix/race-condition-position-monitoring`
+
+#### Summary
+Fixed critical thread safety issue...
+
+#### Changes Made
+1. Modified _start_position_monitor() method
+2. Added lock protection around shared state updates
+
+#### Impact
+- Critical Safety Fix: Prevents incorrect safety validations
+- Thread Safety: Eliminates race condition
+```
+
+### Code Review Checklist
+
+Before committing:
+- [ ] Code follows existing style and conventions
+- [ ] All tests pass (run relevant test_*.py files)
+- [ ] CHANGELOG.md updated with detailed entry
+- [ ] No sensitive data (API keys, passwords) in commits
+- [ ] Thread safety considered for concurrent operations
+- [ ] Safety constraints validated for robot movements
+- [ ] Error handling added for edge cases
+- [ ] Comments added for complex logic
+
+### SSH Troubleshooting
+
+**Permission denied (publickey):**
+```bash
+# Verify SSH key is added to GitHub
+ssh -T git@github.com
+
+# If fails, add key to SSH agent
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+
+# Verify correct remote URL
+git remote -v
+# Should show: git@github.com:mobilealohafalkenberg/alopro-halmstad.git
+```
+
+**Wrong remote URL:**
+```bash
+# Fix HTTPS to SSH
+git remote set-url origin git@github.com:mobilealohafalkenberg/alopro-halmstad.git
+
+# Fix incorrect username in SSH URL
+git remote set-url origin git@github.com:mobilealohafalkenberg/alopro-halmstad.git
+```
