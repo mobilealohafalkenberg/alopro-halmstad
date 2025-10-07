@@ -1109,18 +1109,55 @@ class ArmController:
     def set_speed(self, moving_time: float, accel_time: Optional[float] = None):
         """
         Set default movement speed.
-        
+
         Args:
-            moving_time: Default time for movements (seconds)
-            accel_time: Acceleration time (seconds)
+            moving_time: Default time for movements (seconds), must be positive
+            accel_time: Acceleration time (seconds), must be positive and less than moving_time
+
+        Raises:
+            ValueError: If parameters are invalid (negative, zero, or accel_time >= moving_time)
         """
+        # Define reasonable bounds for safety
+        MAX_MOVING_TIME = 10.0  # Maximum 10 seconds per movement
+        MAX_ACCEL_TIME = 5.0    # Maximum 5 seconds acceleration
+        MIN_TIME = 0.01         # Minimum 10ms (practical lower bound)
+
+        # Validate moving_time
+        if moving_time <= 0:
+            raise ValueError(f"moving_time must be positive, got {moving_time}")
+
+        if moving_time < MIN_TIME:
+            raise ValueError(f"moving_time must be at least {MIN_TIME}s for safe operation, got {moving_time}s")
+
+        if moving_time > MAX_MOVING_TIME:
+            raise ValueError(f"moving_time exceeds maximum safe limit of {MAX_MOVING_TIME}s, got {moving_time}s")
+
+        # Validate accel_time if provided
+        if accel_time is not None:
+            if accel_time <= 0:
+                raise ValueError(f"accel_time must be positive, got {accel_time}")
+
+            if accel_time < MIN_TIME:
+                raise ValueError(f"accel_time must be at least {MIN_TIME}s for safe operation, got {accel_time}s")
+
+            if accel_time > MAX_ACCEL_TIME:
+                raise ValueError(f"accel_time exceeds maximum safe limit of {MAX_ACCEL_TIME}s, got {accel_time}s")
+
+            # Validate relationship: accel_time must be less than moving_time
+            if accel_time >= moving_time:
+                raise ValueError(
+                    f"accel_time ({accel_time}s) must be less than moving_time ({moving_time}s). "
+                    f"Robot cannot accelerate for longer than the total movement time."
+                )
+
+        # All validations passed, set the values
         self.default_moving_time = moving_time
         if accel_time is not None:
             self.default_accel_time = accel_time
-        
+
         if self.initialized:
             self.bot.arm.set_trajectory_time(moving_time, accel_time)
-        
+
         print(f"[ArmController] Speed set: moving_time={moving_time}s, accel_time={self.default_accel_time}s")
     
     def emergency_stop(self) -> Dict:
