@@ -414,7 +414,45 @@ class ArmController:
                 result[axis] = max(min_val, min(max_val, result[axis]))
         
         return result
-    
+
+    def _convert_waypoint_to_position(self, point: List[float]) -> List[float]:
+        """
+        Convert waypoint format to position list [x, y, z].
+
+        Handles two formats:
+        - 2D: [y, x] (normalized or meters) -> [x, y, z] with default z=0.2
+        - 3D: [x, y, z] -> returned as-is
+
+        For 2D points, coordinates > 1 are treated as normalized (0-1000 range)
+        and divided by 1000 to convert to meters.
+
+        Args:
+            point: Waypoint coordinates as list
+
+        Returns:
+            Position as [x, y, z] in meters
+
+        Examples:
+            >>> _convert_waypoint_to_position([500, 300])  # normalized [y, x]
+            [0.3, 0.5, 0.2]
+
+            >>> _convert_waypoint_to_position([0.5, 0.3])  # meters [y, x]
+            [0.3, 0.5, 0.2]
+
+            >>> _convert_waypoint_to_position([0.25, 0.1, 0.15])  # [x, y, z]
+            [0.25, 0.1, 0.15]
+        """
+        if len(point) == 2:
+            # [y, x] format - convert to [x, y, z]
+            # Normalize coordinates > 1 (assumed to be in 0-1000 range)
+            x = point[1] / 1000.0 if point[1] > 1 else point[1]
+            y = point[0] / 1000.0 if point[0] > 1 else point[0]
+            z = 0.2  # Default working height
+            return [x, y, z]
+        else:
+            # 3D format or other - return as-is
+            return point
+
     def move_joints(self, 
                    joint_positions: List[float],
                    unit: str = 'auto',
@@ -435,6 +473,11 @@ class ArmController:
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
         
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
         try:
             # Parse and convert angles
             angles_rad = self.parse_joint_angles(joint_positions, unit)
@@ -510,6 +553,11 @@ class ArmController:
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
         
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
         try:
             # Parse position
             pos = self.parse_position(position, format)
@@ -629,6 +677,14 @@ class ArmController:
         Returns:
             Status dictionary
         """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         if pose_name not in self.POSES:
             return {"success": False, "error": f"Unknown pose: {pose_name}", "state": "error"}
         
@@ -687,6 +743,14 @@ class ArmController:
         Returns:
             Dictionary with trajectory execution results (if blocking=True) or trajectory_id (if blocking=False)
         """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         # For non-blocking mode, start trajectory in background thread
         if not blocking:
             trajectory_id = str(uuid.uuid4())
@@ -699,13 +763,7 @@ class ArmController:
                     label = waypoint.get('label', f'waypoint_{i}')
 
                     # Convert point format if needed
-                    if len(point) == 2:
-                        x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                        y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                        z = 0.2
-                        position = [x, y, z]
-                    else:
-                        position = point
+                    position = self._convert_waypoint_to_position(point)
 
                     if len(position) >= 3:
                         validation = self.safety_validator.validate_position(position[0], position[1], position[2])
@@ -768,13 +826,7 @@ class ArmController:
                 label = waypoint.get('label', f'waypoint_{i}')
 
                 # Convert point format if needed
-                if len(point) == 2:
-                    x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                    y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                    z = 0.2
-                    position = [x, y, z]
-                else:
-                    position = point
+                position = self._convert_waypoint_to_position(point)
 
                 if len(position) >= 3:
                     validation = self.safety_validator.validate_position(position[0], position[1], position[2])
@@ -798,14 +850,7 @@ class ArmController:
             gripper_action = waypoint.get('gripper_action')
 
             # Convert point format if needed
-            if len(point) == 2:
-                # [y,x] normalized format - convert to [x,y,z]
-                x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                z = 0.2  # Default working height
-                position = [x, y, z]
-            else:
-                position = point
+            position = self._convert_waypoint_to_position(point)
 
             print(f"[ArmController] Waypoint {i+1}/{len(waypoints)} '{label}': {[f'{p:.3f}' for p in position]}")
 
@@ -879,14 +924,7 @@ class ArmController:
                 gripper_action = waypoint.get('gripper_action')
 
                 # Convert point format if needed
-                if len(point) == 2:
-                    # [y,x] normalized format - convert to [x,y,z]
-                    x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                    y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                    z = 0.2  # Default working height
-                    position = [x, y, z]
-                else:
-                    position = point
+                position = self._convert_waypoint_to_position(point)
 
                 print(f"[ArmController] Trajectory {trajectory_id} - Waypoint {i+1}/{len(waypoints)} '{label}': {[f'{p:.3f}' for p in position]}")
 
@@ -1132,6 +1170,14 @@ class ArmController:
         Raises:
             ValueError: If parameters are invalid (negative, zero, or accel_time >= moving_time)
         """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         # Define reasonable bounds for safety
         MAX_MOVING_TIME = 10.0  # Maximum 10 seconds per movement
         MAX_ACCEL_TIME = 5.0    # Maximum 5 seconds acceleration
@@ -1176,35 +1222,107 @@ class ArmController:
         print(f"[ArmController] Speed set: moving_time={moving_time}s, accel_time={self.default_accel_time}s")
     
     def emergency_stop(self) -> Dict:
-        """Emergency stop - disable torque on all joints"""
+        """
+        Emergency stop - immediately disable torque on all joints and enter ERROR state.
+
+        After calling this method:
+        - All joint torques are disabled
+        - System enters ERROR state
+        - All movement commands will be rejected
+        - Call resume_after_stop() to recover and resume operations
+
+        Returns:
+            Dict with success status and state
+        """
         if not self.initialized:
             return {"success": False, "error": "Not initialized"}
-        
+
         try:
-            print("[ArmController] EMERGENCY STOP!")
+            print("[ArmController] ⚠️ EMERGENCY STOP ACTIVATED!")
             self.bot.core.robot_torque_enable('group', 'arm', False)
             with self.state_lock:
                 self.current_state = ArmState.ERROR
+            print("[ArmController] System in ERROR state. Call resume_after_stop() to recover.")
             return {"success": True, "state": "emergency_stopped"}
         except Exception as e:
             return {"success": False, "error": str(e)}
     
     def resume_after_stop(self) -> Dict:
-        """Re-enable torque after emergency stop"""
+        """
+        Re-enable torque and resume operations after emergency stop.
+
+        This method performs recovery validation before resuming:
+        1. Verifies system is in ERROR state
+        2. Re-enables motor torque
+        3. Captures current arm position
+        4. Validates current position is safe
+        5. Clears ERROR state to allow movements
+
+        Returns:
+            Dict with success status, state, and validation details
+        """
         if not self.initialized:
             return {"success": False, "error": "Not initialized"}
-        
+
+        # Check if we're actually in ERROR state
+        with self.state_lock:
+            if self.current_state != ArmState.ERROR:
+                return {
+                    "success": False,
+                    "error": f"Not in ERROR state. Current state: {self.current_state.value}",
+                    "state": self.current_state.value
+                }
+
         try:
-            print("[ArmController] Resuming after emergency stop")
+            print("[ArmController] Resuming after emergency stop...")
+
+            # Re-enable torque
+            print("[ArmController] Re-enabling motor torque")
             torque_on(self.bot)
-            # Capture current position
+
+            # Capture and validate current position
+            print("[ArmController] Capturing current position")
             self.bot.arm.capture_joint_positions()
+
+            # Get current joint positions for validation
+            with self.bot.core.js_mutex:
+                current_joints = list(self.bot.arm.get_joint_commands())
+
+            # Validate current position is safe
+            is_safe, warning = self.check_safety_constraints(current_joints)
+            if not is_safe:
+                print(f"[ArmController] ⚠️ WARNING: Current position unsafe after resume: {warning}")
+                print("[ArmController] Recommend moving to 'home' or 'ready' pose")
+                # Still allow resume but warn user
+                with self.state_lock:
+                    self.current_state = ArmState.IDLE
+                    self.current_joints = current_joints
+                return {
+                    "success": True,
+                    "state": "resumed_with_warnings",
+                    "warning": warning,
+                    "current_joints": current_joints,
+                    "recommendation": "Move to a safe pose ('home' or 'ready') before other operations"
+                }
+
+            # All validations passed
             with self.state_lock:
                 self.current_state = ArmState.IDLE
-            return {"success": True, "state": "resumed"}
+                self.current_joints = current_joints
+
+            print("[ArmController] ✓ System resumed successfully")
+            return {
+                "success": True,
+                "state": "resumed",
+                "current_joints": current_joints,
+                "message": "System recovered from ERROR state"
+            }
+
         except Exception as e:
-            return {"success": False, "error": str(e)}
-    
+            print(f"[ArmController] ✗ Failed to resume: {e}")
+            # Keep ERROR state if resume fails
+            return {"success": False, "error": str(e), "state": "error"}
+
     def shutdown(self):
         """Shutdown robot connection and cleanup."""
         print("[ArmController] Shutting down...")
@@ -1225,7 +1343,31 @@ class ArmController:
 _global_controller = None
 
 def get_controller() -> ArmController:
-    """Get or create global controller instance"""
+    """
+    Get or create global controller instance.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+
+    Returns:
+        ArmController: The global controller instance
+    """
+    import warnings
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly: controller = ArmController(robot_name='vx300s', group_name='arm'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller is None:
         _global_controller = ArmController()
@@ -1233,9 +1375,40 @@ def get_controller() -> ArmController:
     return _global_controller
 
 def move_arm(position=None, joints=None, pose=None, **kwargs) -> Dict:
-    """Simple function to move arm"""
+    """
+    Simple function to move arm using global controller.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            move_arm(position=[0.3, 0.0, 0.2])
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+            controller.move_to_position([0.3, 0.0, 0.2])
+
+    Args:
+        position: Target position [x, y, z]
+        joints: Target joint angles
+        pose: Named pose ('home', 'ready', 'sleep')
+        **kwargs: Additional arguments passed to movement methods
+
+    Returns:
+        Dict: Movement result
+    """
+    import warnings
+    warnings.warn(
+        "move_arm() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly and call movement methods directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     controller = get_controller()
-    
+
     if pose is not None:
         return controller.move_to_pose(pose, **kwargs)
     elif joints is not None:
@@ -1246,11 +1419,59 @@ def move_arm(position=None, joints=None, pose=None, **kwargs) -> Dict:
         return {"success": False, "error": "No target specified"}
 
 def get_arm_state() -> Dict:
-    """Simple function to get arm state"""
+    """
+    Simple function to get arm state from global controller.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            state = get_arm_state()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+            state = controller.get_arm_state()
+
+    Returns:
+        Dict: Current arm state
+    """
+    import warnings
+    warnings.warn(
+        "get_arm_state() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly and call get_arm_state() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().get_arm_state()
 
 def cleanup():
-    """Cleanup global controller"""
+    """
+    Cleanup global controller.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            cleanup()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+            # ... use controller ...
+            controller.shutdown()
+    """
+    import warnings
+    warnings.warn(
+        "cleanup() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly and call shutdown() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller:
         _global_controller.shutdown()

@@ -552,6 +552,75 @@ The test suite (`test_dry_run_mode.py`) validates:
 - Faster development iteration cycles
 
 ---
+### Task 1.7: Improve Emergency Stop State Management
+
+**Date**: 2025-10-07
+**Task ID**: 1.7
+**Task Name**: Improve Emergency Stop State Management
+**Author**: anugraha09
+**Branch**: `fix/race-condition-position-monitoring`
+
+#### Summary
+Enhanced emergency stop functionality to properly prevent operations after an emergency stop until the system is explicitly resumed and validated. Previously, `emergency_stop()` disabled torque and set state to ERROR, but other methods could still attempt operations since `initialized=True` remained set. Now all movement methods check for ERROR state and reject operations until `resume_after_stop()` is called with comprehensive recovery validation.
+
+#### Changes Made
+1. Added ERROR state checks to all 5 movement methods:
+   - `move_joints()` - Rejects movements if in ERROR state
+   - `move_to_position()` - Rejects movements if in ERROR state
+   - `move_to_pose()` - Rejects movements if in ERROR state
+   - `execute_trajectory()` - Rejects trajectory execution if in ERROR state
+   - `set_speed()` - Rejects speed changes if in ERROR state
+
+2. Enhanced `emergency_stop()` method:
+   - Added comprehensive docstring explaining behavior and recovery process
+   - Sets system to ERROR state after disabling torque
+   - Provides clear user feedback with warning indicators
+   - Instructs user to call `resume_after_stop()` for recovery
+
+3. Enhanced `resume_after_stop()` method:
+   - Validates system is actually in ERROR state before resuming
+   - Re-enables motor torque safely
+   - Captures current arm position after torque enable
+   - Validates current position against safety constraints
+   - Returns detailed status with warnings if position is unsafe
+   - Recommends moving to safe pose if position validation fails
+   - Preserves ERROR state if recovery fails
+
+#### Technical Details
+
+**ERROR State Check Pattern:**
+```python
+# Check if system is in ERROR state
+with self.state_lock:
+    if self.current_state == ArmState.ERROR:
+        return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+```
+
+**Enhanced Methods:**
+- `emergency_stop()`: Disables torque, sets ERROR state, provides clear feedback
+- `resume_after_stop()`: Validates state, re-enables torque, captures position, checks safety, clears ERROR state
+
+#### Impact
+- **Critical Safety Fix**: Prevents operations after emergency stop until explicit validated resume
+- **Proper State Management**: ERROR state enforced across all movement operations
+- **Better Recovery**: Validates system state and position safety before resuming
+- **User Guidance**: Clear error messages guide emergency stop and recovery process
+- **Thread Safety**: All state checks protected by state_lock
+
+#### Files Modified
+- `gemini-live/arm_controller.py`:
+  - Lines 424-427, 504-507, 627-634, 693-700, 1145-1152: ERROR state checks
+  - Lines 1197-1221: Enhanced `emergency_stop()`
+  - Lines 1223-1297: Enhanced `resume_after_stop()`
+
+#### Testing Recommendations
+1. Test emergency stop during various operations
+2. Verify all movement methods reject commands after emergency stop
+3. Test resume with safe and unsafe robot positions
+4. Verify safety validation during recovery
+5. Test thread safety with concurrent calls
+
+---
 
 ### Task 1.8: Add Async Trajectory Execution Option
 
@@ -681,6 +750,116 @@ arm.cancel_trajectory(trajectory_id)
 - Add trajectory priority levels
 - Add pause/resume functionality
 - Add trajectory visualization/replay capability
+
+---
+
+
+### Task 1.9: Remove Global Controller Singleton Pattern
+
+**Date**: 2025-10-07
+**Task ID**: 1.9
+**Task Name**: Remove Global Controller Singleton Pattern
+**Author**: anugraha09
+**Branch**: `fix/race-condition-position-monitoring`
+
+#### Summary
+Deprecated the global controller singleton pattern (lines 1316-1348 in arm_controller.py) which used module-level functions `get_controller()`, `move_arm()`, `get_arm_state()`, and `cleanup()`. This pattern created hidden global state, made testing difficult, and prevented multiple controller instances. All singleton functions now emit deprecation warnings and users are guided to manage controller instances explicitly.
+
+#### Changes Made
+1. **Added Deprecation Warnings to All Singleton Functions**:
+   - `get_controller()`: Now warns users to create explicit ArmController instances
+   - `move_arm()`: Warns to use controller.move_to_position(), .move_to_pose(), or .move_joints()
+   - `get_arm_state()`: Warns to use controller.get_arm_state()
+   - `cleanup()`: Warns to use controller.shutdown()
+
+2. **Enhanced Documentation**:
+   - Added detailed docstrings with deprecation notices
+   - Included migration examples in each function's documentation
+   - Specified removal timeline (v2.0)
+
+3. **Created Comprehensive Migration Guide**:
+   - Complete migration guide at `gemini-live/docs/MIGRATION_GUIDE_SINGLETON_REMOVAL.md`
+   - Before/after examples for all affected functions
+   - Best practices including context managers and dependency injection
+   - FAQ section addressing common migration concerns
+   - Timeline for deprecation and removal
+
+#### Technical Details
+
+**Deprecation Warning Implementation:**
+```python
+def get_controller() -> ArmController:
+    """
+    Get or create global controller instance.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+    """
+    import warnings
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly: controller = ArmController(robot_name='vx300s', group_name='arm'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    # ... existing implementation ...
+```
+
+**Migration Example:**
+```python
+# Before (deprecated):
+from arm_controller import get_controller, move_arm
+controller = get_controller()
+move_arm(position=[0.3, 0.0, 0.2])
+
+# After (recommended):
+from arm_controller import ArmController
+controller = ArmController(robot_model='vx300s', robot_name='follower_left')
+controller.initialize()
+controller.move_to_position([0.3, 0.0, 0.2])
+controller.shutdown()
+```
+
+#### Impact
+- **Architecture Improvement**: Eliminates anti-pattern of hidden global state
+- **Better Testability**: Enables proper mocking and isolation in unit tests
+- **Multi-Robot Support**: Allows managing multiple robot arm instances simultaneously
+- **Clear Ownership**: Makes controller lifecycle management explicit and trackable
+- **Thread Safety**: Reduces risks from shared global state in concurrent operations
+- **Backward Compatible**: All existing code continues to work in v1.9 (with warnings)
+- **Breaking Change in v2.0**: Users must migrate before v2.0 release
+
+#### Files Modified
+- `gemini-live/arm_controller.py` (lines 1316-1441: added deprecation warnings and enhanced documentation)
+- `gemini-live/docs/MIGRATION_GUIDE_SINGLETON_REMOVAL.md` (new file: comprehensive migration guide)
+
+#### Migration Path
+1. **v1.9 (Current)**: Deprecation warnings added, old API still functional
+2. **User Migration Period**: Update code using migration guide
+3. **v2.0 (Planned)**: Complete removal of singleton functions
+
+#### Testing Recommendations
+1. Enable deprecation warnings in your code: `warnings.simplefilter('always', DeprecationWarning)`
+2. Run existing tests to identify all usage of deprecated functions
+3. Update tests to use explicit controller instances
+4. Test with dry-run mode for hardware-independent validation: `ArmController(dry_run=True)`
+5. Verify no deprecation warnings after migration
+6. Test multiple controller instances if using multiple arms
+
+#### Migration Resources
+- **Migration Guide**: `gemini-live/docs/MIGRATION_GUIDE_SINGLETON_REMOVAL.md`
+- **Deprecation Warnings**: Clear error messages with specific guidance
+- **Examples**: Before/after code samples in docstrings and migration guide
+- **Best Practices**: Context managers, class-based approaches, dependency injection
 
 ---
 
