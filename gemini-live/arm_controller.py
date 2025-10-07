@@ -420,6 +420,11 @@ class ArmController:
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
         
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
         try:
             # Parse and convert angles
             angles_rad = self.parse_joint_angles(joint_positions, unit)
@@ -495,6 +500,11 @@ class ArmController:
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
         
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
         try:
             # Parse position
             pos = self.parse_position(position, format)
@@ -614,6 +624,14 @@ class ArmController:
         Returns:
             Status dictionary
         """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         if pose_name not in self.POSES:
             return {"success": False, "error": f"Unknown pose: {pose_name}", "state": "error"}
         
@@ -672,6 +690,14 @@ class ArmController:
         Returns:
             Dictionary with trajectory execution results (if blocking=True) or trajectory_id (if blocking=False)
         """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         # For non-blocking mode, start trajectory in background thread
         if not blocking:
             trajectory_id = str(uuid.uuid4())
@@ -1117,6 +1143,14 @@ class ArmController:
         Raises:
             ValueError: If parameters are invalid (negative, zero, or accel_time >= moving_time)
         """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == ArmState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         # Define reasonable bounds for safety
         MAX_MOVING_TIME = 10.0  # Maximum 10 seconds per movement
         MAX_ACCEL_TIME = 5.0    # Maximum 5 seconds acceleration
@@ -1161,35 +1195,107 @@ class ArmController:
         print(f"[ArmController] Speed set: moving_time={moving_time}s, accel_time={self.default_accel_time}s")
     
     def emergency_stop(self) -> Dict:
-        """Emergency stop - disable torque on all joints"""
+        """
+        Emergency stop - immediately disable torque on all joints and enter ERROR state.
+
+        After calling this method:
+        - All joint torques are disabled
+        - System enters ERROR state
+        - All movement commands will be rejected
+        - Call resume_after_stop() to recover and resume operations
+
+        Returns:
+            Dict with success status and state
+        """
         if not self.initialized:
             return {"success": False, "error": "Not initialized"}
-        
+
         try:
-            print("[ArmController] EMERGENCY STOP!")
+            print("[ArmController] ⚠️ EMERGENCY STOP ACTIVATED!")
             self.bot.core.robot_torque_enable('group', 'arm', False)
             with self.state_lock:
                 self.current_state = ArmState.ERROR
+            print("[ArmController] System in ERROR state. Call resume_after_stop() to recover.")
             return {"success": True, "state": "emergency_stopped"}
         except Exception as e:
             return {"success": False, "error": str(e)}
     
     def resume_after_stop(self) -> Dict:
-        """Re-enable torque after emergency stop"""
+        """
+        Re-enable torque and resume operations after emergency stop.
+
+        This method performs recovery validation before resuming:
+        1. Verifies system is in ERROR state
+        2. Re-enables motor torque
+        3. Captures current arm position
+        4. Validates current position is safe
+        5. Clears ERROR state to allow movements
+
+        Returns:
+            Dict with success status, state, and validation details
+        """
         if not self.initialized:
             return {"success": False, "error": "Not initialized"}
-        
+
+        # Check if we're actually in ERROR state
+        with self.state_lock:
+            if self.current_state != ArmState.ERROR:
+                return {
+                    "success": False,
+                    "error": f"Not in ERROR state. Current state: {self.current_state.value}",
+                    "state": self.current_state.value
+                }
+
         try:
-            print("[ArmController] Resuming after emergency stop")
+            print("[ArmController] Resuming after emergency stop...")
+
+            # Re-enable torque
+            print("[ArmController] Re-enabling motor torque")
             torque_on(self.bot)
-            # Capture current position
+
+            # Capture and validate current position
+            print("[ArmController] Capturing current position")
             self.bot.arm.capture_joint_positions()
+
+            # Get current joint positions for validation
+            with self.bot.core.js_mutex:
+                current_joints = list(self.bot.arm.get_joint_commands())
+
+            # Validate current position is safe
+            is_safe, warning = self.check_safety_constraints(current_joints)
+            if not is_safe:
+                print(f"[ArmController] ⚠️ WARNING: Current position unsafe after resume: {warning}")
+                print("[ArmController] Recommend moving to 'home' or 'ready' pose")
+                # Still allow resume but warn user
+                with self.state_lock:
+                    self.current_state = ArmState.IDLE
+                    self.current_joints = current_joints
+                return {
+                    "success": True,
+                    "state": "resumed_with_warnings",
+                    "warning": warning,
+                    "current_joints": current_joints,
+                    "recommendation": "Move to a safe pose ('home' or 'ready') before other operations"
+                }
+
+            # All validations passed
             with self.state_lock:
                 self.current_state = ArmState.IDLE
-            return {"success": True, "state": "resumed"}
+                self.current_joints = current_joints
+
+            print("[ArmController] ✓ System resumed successfully")
+            return {
+                "success": True,
+                "state": "resumed",
+                "current_joints": current_joints,
+                "message": "System recovered from ERROR state"
+            }
+
         except Exception as e:
-            return {"success": False, "error": str(e)}
-    
+            print(f"[ArmController] ✗ Failed to resume: {e}")
+            # Keep ERROR state if resume fails
+            return {"success": False, "error": str(e), "state": "error"}
+
     def shutdown(self):
         """Shutdown robot connection and cleanup."""
         print("[ArmController] Shutting down...")
