@@ -7,8 +7,10 @@ This script tests various positions to determine actual safe workspace bounds.
 import sys
 import json
 import time
+import os
 from typing import List, Tuple, Dict
-sys.path.append('/home/aloha/gemini-live')
+# Add parent directory to path to import controllers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from arm_controller import ArmController
 

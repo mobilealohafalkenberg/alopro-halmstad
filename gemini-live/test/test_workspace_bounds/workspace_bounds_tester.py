@@ -7,7 +7,9 @@ Tests safe working positions to determine actual robot workspace limits
 import sys
 import time
 import json
-sys.path.append('/home/aloha/gemini-live')
+import os
+# Add parent directory to path to import controllers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from arm_controller import ArmController
 
 def test_workspace_bounds():

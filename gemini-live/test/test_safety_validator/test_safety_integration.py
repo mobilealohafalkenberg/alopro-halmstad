@@ -6,7 +6,9 @@ Tests that known bad positions are properly blocked
 
 import sys
 import json
-sys.path.append('/home/aloha/gemini-live')
+import os
+# Add parent directory to path to import controllers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 # We'll test without actually connecting to robot
 from arm_controller import ArmController
