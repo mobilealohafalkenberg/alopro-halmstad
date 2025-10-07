@@ -13,6 +13,7 @@ import uuid
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
+import logging
 
 from aloha.robot_utils import move_arms, torque_on
 from aloha.constants import START_ARM_POSE
@@ -129,6 +130,7 @@ class ArmController:
         self.current_joints = [0.0] * 6
         self.current_ee_pose = None
         self.state_lock = threading.Lock()
+        self.monitor_failure_count = 0 #tracks how many times the monitor has failed consecutively.
         self.dry_run = dry_run
 
         # Movement parameters
@@ -219,8 +221,21 @@ class ArmController:
                         self.current_joints = joints
                         self.current_ee_pose = ee_pose
 
-                except Exception:
-                    pass  # Silently ignore errors in monitor thread
+                    # Reset failure counter on success
+                    self.monitor_failure_count = 0
+
+                except Exception as e:
+                    self.monitor_failure_count += 1
+                    logging.error(
+                       f"Position monitor failed (failure #{self.monitor_failure_count}): {type(e).__name__}: {e}",
+                       exc_info=True
+                    )
+                    # Alert if failures are excessive
+                    if self.monitor_failure_count >= 5:
+                        logging.critical(
+                            f"Position monitor has failed {self.monitor_failure_count} consecutive times! "
+                           "This may indicate a serious hardware or connection issue."
+                        )
 
                 time.sleep(0.1)  # Check 10 times per second
 
