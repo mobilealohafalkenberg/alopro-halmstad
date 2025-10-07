@@ -399,7 +399,45 @@ class ArmController:
                 result[axis] = max(min_val, min(max_val, result[axis]))
         
         return result
-    
+
+    def _convert_waypoint_to_position(self, point: List[float]) -> List[float]:
+        """
+        Convert waypoint format to position list [x, y, z].
+
+        Handles two formats:
+        - 2D: [y, x] (normalized or meters) -> [x, y, z] with default z=0.2
+        - 3D: [x, y, z] -> returned as-is
+
+        For 2D points, coordinates > 1 are treated as normalized (0-1000 range)
+        and divided by 1000 to convert to meters.
+
+        Args:
+            point: Waypoint coordinates as list
+
+        Returns:
+            Position as [x, y, z] in meters
+
+        Examples:
+            >>> _convert_waypoint_to_position([500, 300])  # normalized [y, x]
+            [0.3, 0.5, 0.2]
+
+            >>> _convert_waypoint_to_position([0.5, 0.3])  # meters [y, x]
+            [0.3, 0.5, 0.2]
+
+            >>> _convert_waypoint_to_position([0.25, 0.1, 0.15])  # [x, y, z]
+            [0.25, 0.1, 0.15]
+        """
+        if len(point) == 2:
+            # [y, x] format - convert to [x, y, z]
+            # Normalize coordinates > 1 (assumed to be in 0-1000 range)
+            x = point[1] / 1000.0 if point[1] > 1 else point[1]
+            y = point[0] / 1000.0 if point[0] > 1 else point[0]
+            z = 0.2  # Default working height
+            return [x, y, z]
+        else:
+            # 3D format or other - return as-is
+            return point
+
     def move_joints(self, 
                    joint_positions: List[float],
                    unit: str = 'auto',
@@ -710,13 +748,7 @@ class ArmController:
                     label = waypoint.get('label', f'waypoint_{i}')
 
                     # Convert point format if needed
-                    if len(point) == 2:
-                        x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                        y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                        z = 0.2
-                        position = [x, y, z]
-                    else:
-                        position = point
+                    position = self._convert_waypoint_to_position(point)
 
                     if len(position) >= 3:
                         validation = self.safety_validator.validate_position(position[0], position[1], position[2])
@@ -779,13 +811,7 @@ class ArmController:
                 label = waypoint.get('label', f'waypoint_{i}')
 
                 # Convert point format if needed
-                if len(point) == 2:
-                    x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                    y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                    z = 0.2
-                    position = [x, y, z]
-                else:
-                    position = point
+                position = self._convert_waypoint_to_position(point)
 
                 if len(position) >= 3:
                     validation = self.safety_validator.validate_position(position[0], position[1], position[2])
@@ -809,14 +835,7 @@ class ArmController:
             gripper_action = waypoint.get('gripper_action')
 
             # Convert point format if needed
-            if len(point) == 2:
-                # [y,x] normalized format - convert to [x,y,z]
-                x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                z = 0.2  # Default working height
-                position = [x, y, z]
-            else:
-                position = point
+            position = self._convert_waypoint_to_position(point)
 
             print(f"[ArmController] Waypoint {i+1}/{len(waypoints)} '{label}': {[f'{p:.3f}' for p in position]}")
 
@@ -890,14 +909,7 @@ class ArmController:
                 gripper_action = waypoint.get('gripper_action')
 
                 # Convert point format if needed
-                if len(point) == 2:
-                    # [y,x] normalized format - convert to [x,y,z]
-                    x = point[1] / 1000.0 if point[1] > 1 else point[1]
-                    y = point[0] / 1000.0 if point[0] > 1 else point[0]
-                    z = 0.2  # Default working height
-                    position = [x, y, z]
-                else:
-                    position = point
+                position = self._convert_waypoint_to_position(point)
 
                 print(f"[ArmController] Trajectory {trajectory_id} - Waypoint {i+1}/{len(waypoints)} '{label}': {[f'{p:.3f}' for p in position]}")
 
