@@ -5,16 +5,19 @@ Verifies that dry-run mode works correctly and safety checks still run.
 """
 
 import time
+import sys
+import os
+
+# Add parent directory to path to import arm_controller
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from arm_controller import ArmController
 
-def test_move_joints_dry_run():
+def test_move_joints_dry_run(arm):
     """Test move_joints() with dry-run enabled."""
     print("\n" + "=" * 60)
     print("TEST 1: move_joints() with dry-run enabled")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     # Test 1a: Safe joint positions
     print("\n[Test 1a] Safe joint positions in dry-run mode:")
@@ -37,14 +40,11 @@ def test_move_joints_dry_run():
     print("✓ Safety check blocks unsafe movement in dry-run mode")
 
 
-def test_move_to_position_dry_run():
+def test_move_to_position_dry_run(arm):
     """Test move_to_position() with dry-run enabled."""
     print("\n" + "=" * 60)
     print("TEST 2: move_to_position() with dry-run enabled")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     # Test 2a: Safe position
     print("\n[Test 2a] Safe position in dry-run mode:")
@@ -71,14 +71,11 @@ def test_move_to_position_dry_run():
     print("✓ Workspace limits enforced in dry-run mode")
 
 
-def test_move_to_pose_dry_run():
+def test_move_to_pose_dry_run(arm):
     """Test move_to_pose() with dry-run enabled."""
     print("\n" + "=" * 60)
     print("TEST 3: move_to_pose() with dry-run enabled")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     # Test 3a: Named poses
     poses = ['home', 'ready', 'sleep']
@@ -99,14 +96,11 @@ def test_move_to_pose_dry_run():
     print("✓ Invalid pose rejected correctly")
 
 
-def test_execute_trajectory_dry_run():
+def test_execute_trajectory_dry_run(arm):
     """Test execute_trajectory() with dry-run enabled."""
     print("\n" + "=" * 60)
     print("TEST 4: execute_trajectory() with dry-run enabled")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     # Test 4a: Valid trajectory
     print("\n[Test 4a] Valid trajectory in dry-run mode:")
@@ -134,32 +128,25 @@ def test_execute_trajectory_dry_run():
     print("✓ Trajectory with unsafe waypoint rejected in dry-run mode")
 
 
-def test_dry_run_vs_normal_mode():
+def test_dry_run_vs_normal_mode(arm):
     """Compare dry-run mode vs normal mode behavior."""
     print("\n" + "=" * 60)
     print("TEST 5: Comparing dry-run vs normal mode")
     print("=" * 60)
 
-    # Create two controllers: one with dry-run, one without
-    arm_dry = ArmController(enable_safety=True, dry_run=True)
-    arm_dry.initialize()
-
     print("\n[Test 5a] Same command in dry-run mode:")
-    result_dry = arm_dry.move_to_position([0.3, 0.0, 0.2])
+    result_dry = arm.move_to_position([0.3, 0.0, 0.2])
     print(f"Dry-run result state: {result_dry['state']}")
     assert result_dry['state'] == 'dry_run', "Should be in dry_run state"
 
     print("\n✓ Dry-run mode clearly distinguishable from normal mode")
 
 
-def test_safety_checks_comprehensive():
+def test_safety_checks_comprehensive(arm):
     """Comprehensive test of safety checks in dry-run mode."""
     print("\n" + "=" * 60)
     print("TEST 6: Comprehensive safety checks in dry-run")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     test_cases = [
         # (description, method, args, should_pass)
@@ -212,14 +199,20 @@ if __name__ == "__main__":
     print("Testing all movement methods with dry-run enabled")
     print("=" * 60)
 
+    # Create single controller instance for all tests
+    print("\nInitializing controller in dry-run mode (shared across all tests)...")
+    arm = ArmController(enable_safety=True, dry_run=True)
+    arm.initialize()
+    print("✓ Controller initialized\n")
+
     try:
-        # Run all tests
-        test_move_joints_dry_run()
-        test_move_to_position_dry_run()
-        test_move_to_pose_dry_run()
-        test_execute_trajectory_dry_run()
-        test_dry_run_vs_normal_mode()
-        test_safety_checks_comprehensive()
+        # Run all tests with shared controller
+        test_move_joints_dry_run(arm)
+        test_move_to_position_dry_run(arm)
+        test_move_to_pose_dry_run(arm)
+        test_execute_trajectory_dry_run(arm)
+        test_dry_run_vs_normal_mode(arm)
+        test_safety_checks_comprehensive(arm)
 
         print("\n" + "=" * 60)
         print("ALL TESTS PASSED!")

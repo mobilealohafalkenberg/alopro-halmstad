@@ -5,16 +5,18 @@ Validates that invalid parameters are properly rejected.
 """
 
 import sys
+import os
+
+# Add parent directory to path to import arm_controller
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from arm_controller import ArmController
 
-def test_valid_inputs():
+def test_valid_inputs(arm):
     """Test that valid inputs are accepted."""
     print("\n" + "=" * 60)
     print("TEST 1: Valid Inputs")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     test_cases = [
         (2.0, None, "Default moving_time only"),
@@ -35,14 +37,11 @@ def test_valid_inputs():
             sys.exit(1)
 
 
-def test_invalid_moving_time():
+def test_invalid_moving_time(arm):
     """Test that invalid moving_time values are rejected."""
     print("\n" + "=" * 60)
     print("TEST 2: Invalid moving_time Values")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     test_cases = [
         (0.0, None, "Zero moving_time"),
@@ -63,14 +62,11 @@ def test_invalid_moving_time():
             print(f"  ✓ PASS - Correctly rejected: {e}")
 
 
-def test_invalid_accel_time():
+def test_invalid_accel_time(arm):
     """Test that invalid accel_time values are rejected."""
     print("\n" + "=" * 60)
     print("TEST 3: Invalid accel_time Values")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     test_cases = [
         (2.0, 0.0, "Zero accel_time"),
@@ -91,14 +87,12 @@ def test_invalid_accel_time():
             print(f"  ✓ PASS - Correctly rejected: {e}")
 
 
-def test_accel_time_relationship():
+def test_accel_time_relationship(arm):
     """Test that accel_time >= moving_time is rejected."""
     print("\n" + "=" * 60)
     print("TEST 4: accel_time vs moving_time Relationship")
     print("=" * 60)
 
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     test_cases = [
         (2.0, 2.0, "accel_time equals moving_time"),
@@ -118,14 +112,12 @@ def test_accel_time_relationship():
             print(f"  ✓ PASS - Correctly rejected: {e}")
 
 
-def test_edge_cases():
+def test_edge_cases(arm):
     """Test edge cases and boundary values."""
     print("\n" + "=" * 60)
     print("TEST 5: Edge Cases")
     print("=" * 60)
 
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     # Valid edge cases
     valid_cases = [
@@ -161,14 +153,11 @@ def test_edge_cases():
             print(f"  ✓ PASS - Correctly rejected: {e}")
 
 
-def test_error_messages():
+def test_error_messages(arm):
     """Test that error messages are clear and informative."""
     print("\n" + "=" * 60)
     print("TEST 6: Error Message Quality")
     print("=" * 60)
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     test_cases = [
         (-1.0, None, "negative moving_time", ["positive", "-1"]),
@@ -201,13 +190,19 @@ if __name__ == "__main__":
     print("SET_SPEED() VALIDATION TEST SUITE")
     print("=" * 60)
 
+    # Create single controller instance for all tests
+    print("\nInitializing controller (shared across all tests)...")
+    arm = ArmController(enable_safety=True, dry_run=True)
+    arm.initialize()
+    print("✓ Controller initialized\n")
+
     try:
-        test_valid_inputs()
-        test_invalid_moving_time()
-        test_invalid_accel_time()
-        test_accel_time_relationship()
-        test_edge_cases()
-        test_error_messages()
+        test_valid_inputs(arm)
+        test_invalid_moving_time(arm)
+        test_invalid_accel_time(arm)
+        test_accel_time_relationship(arm)
+        test_edge_cases(arm)
+        test_error_messages(arm)
 
         print("\n" + "=" * 60)
         print("ALL TESTS PASSED!")

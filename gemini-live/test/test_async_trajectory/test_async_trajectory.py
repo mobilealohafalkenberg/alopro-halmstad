@@ -5,14 +5,17 @@ Demonstrates blocking vs non-blocking trajectory execution.
 """
 
 import time
+import sys
+import os
+
+# Add parent directory to path to import arm_controller
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from arm_controller import ArmController
 
-def test_blocking_trajectory():
+def test_blocking_trajectory(arm):
     """Test traditional blocking trajectory execution."""
     print("\n=== Testing Blocking Trajectory ===")
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     waypoints = [
         {"point": [0.25, 0.0, 0.2], "label": "start", "gripper_action": "open"},
@@ -30,12 +33,9 @@ def test_blocking_trajectory():
     print(f"Waypoints completed: {result['waypoints_completed']}")
 
 
-def test_async_trajectory():
+def test_async_trajectory(arm):
     """Test new async (non-blocking) trajectory execution."""
     print("\n=== Testing Async Trajectory ===")
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     waypoints = [
         {"point": [0.25, 0.0, 0.2], "label": "start", "gripper_action": "open"},
@@ -78,12 +78,9 @@ def test_async_trajectory():
         print(f"Failed to start trajectory: {result.get('error')}")
 
 
-def test_trajectory_cancellation():
+def test_trajectory_cancellation(arm):
     """Test trajectory cancellation."""
     print("\n=== Testing Trajectory Cancellation ===")
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     # Long trajectory to have time to cancel
     waypoints = [
@@ -120,12 +117,9 @@ def test_trajectory_cancellation():
         print(f"Error message: {final_status['error']}")
 
 
-def test_multiple_trajectories():
+def test_multiple_trajectories(arm):
     """Test multiple concurrent trajectories."""
     print("\n=== Testing Multiple Concurrent Trajectories ===")
-
-    arm = ArmController(enable_safety=True, dry_run=True)
-    arm.initialize()
 
     # Start multiple trajectories (in dry run mode, these won't conflict)
     trajectory_ids = []
@@ -164,12 +158,18 @@ if __name__ == "__main__":
     print("Async Trajectory Execution Test Suite")
     print("=" * 60)
 
+    # Create single controller instance for all tests
+    print("\nInitializing controller (shared across all tests)...")
+    arm = ArmController(enable_safety=True, dry_run=True)
+    arm.initialize()
+    print("✓ Controller initialized\n")
+
     try:
-        # Run tests
-        test_blocking_trajectory()
-        test_async_trajectory()
-        test_trajectory_cancellation()
-        test_multiple_trajectories()
+        # Run tests with shared controller
+        test_blocking_trajectory(arm)
+        test_async_trajectory(arm)
+        test_trajectory_cancellation(arm)
+        test_multiple_trajectories(arm)
 
         print("\n" + "=" * 60)
         print("All tests completed!")

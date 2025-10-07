@@ -267,7 +267,7 @@ async def handle_tool_call(request: web.Request) -> web.Response:
             # Map speed to moving_time
             speed_map = {'slow': 2.5, 'medium': 1.5, 'fast': 0.8}
             moving_time = speed_map.get(speed, 1.5)
-            e
+
             if arm_controller and arm_controller.initialized:
                 # Use the new execute_trajectory method with gripper coordination
                 result = arm_controller.execute_trajectory(

@@ -39,10 +39,14 @@ class TestEmergencyStop:
 
         try:
             self.controller = ArmController(
-                robot_name='vx300s',
-                group_name='arm',
+                robot_model='vx300s',
+                robot_name='follower_left',
                 dry_run=True  # Use dry-run mode for testing
             )
+            # Initialize the controller
+            if not self.controller.initialize():
+                print("✗ Failed to initialize robot connection")
+                return False
             print("✓ Controller initialized successfully")
             return True
         except Exception as e:

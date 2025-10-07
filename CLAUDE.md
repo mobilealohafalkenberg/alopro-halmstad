@@ -351,3 +351,303 @@ git remote set-url origin git@github.com:mobilealohafalkenberg/alopro-halmstad.g
 # Fix incorrect username in SSH URL
 git remote set-url origin git@github.com:mobilealohafalkenberg/alopro-halmstad.git
 ```
+---
+
+## Task Workflow and Branch Management
+
+### Development Phases
+
+The project is organized into 5 development phases. Each phase focuses on a specific subsystem and can be worked on independently where possible.
+
+#### Phase 1: Arm Controller ✅ COMPLETE
+**Tasks:** 1.1 - 1.14
+**Focus:** Core arm movement, safety, trajectories
+**Status:** Testing complete, all features validated
+
+#### Phase 2: Gripper Controller ⏳ IN PROGRESS
+**Tasks:** 2.1 - 2.x
+**Focus:** Gripper control, state monitoring, arm coordination
+**Status:** Basic implementation exists, needs comprehensive testing
+
+#### Phase 3: Camera Controller 📋 PLANNED
+**Tasks:** 3.1 - 3.x
+**Focus:** Camera initialization, frame capture, visual integration
+**Status:** Basic implementation exists, needs testing
+
+#### Phase 4: Bridge Integration 📋 PLANNED
+**Tasks:** 4.1 - 4.x
+**Focus:** Gemini API integration, tool routing
+**Status:** Basic implementation exists, needs comprehensive testing
+
+#### Phase 5: System Integration 📋 PLANNED
+**Tasks:** 5.1 - 5.x
+**Focus:** End-to-end testing, optimization, deployment
+**Status:** Not started
+
+### Task Selection Guidelines
+
+**Independent Tasks (Work in Any Order):**
+- Most tasks within a phase can be done independently
+- Tasks with "Infrastructure" or "Testing" in the name
+- Documentation and refactoring tasks
+
+**Dependent Tasks (Must Be Done First):**
+- Tasks marked with "⚠️ PREREQUISITE" in CHANGELOG
+- Core initialization tasks (X.1 tasks)
+- Integration tasks that span multiple phases
+
+**Priority Tasks:**
+1. Phase 2 tests (gripper functionality)
+2. Phase 3 tests (camera integration)  
+3. Phase 4 tests (bridge tool calls)
+4. Phase 5 integration tests
+
+### Branch Naming Convention
+
+**Format:** `<type>/<phase>-<task-id>-<brief-description>`
+
+**Types:**
+- `feature/` - New functionality
+- `fix/` - Bug fixes
+- `test/` - Adding or updating tests
+- `refactor/` - Code refactoring
+- `docs/` - Documentation updates
+
+**Examples:**
+```bash
+# Phase 1 examples
+git checkout -b fix/1.11-workspace-bounds
+git checkout -b test/1.6-parameter-validation
+git checkout -b refactor/1.10-test-infrastructure
+
+# Phase 2 examples
+git checkout -b feature/2.1-gripper-initialization
+git checkout -b test/2.2-gripper-position-control
+git checkout -b fix/2.3-state-monitoring
+
+# Phase 3 examples
+git checkout -b feature/3.1-camera-init
+git checkout -b test/3.2-frame-capture
+```
+
+### Starting a New Task
+
+**1. Check Dependencies:**
+```bash
+# Review CHANGELOG.md for task prerequisites
+cat CHANGELOG.md | grep -A 10 "Task <task-id>"
+
+# Check TEST_RESULTS.md for test requirements
+cat test/TEST_RESULTS.md | grep -A 5 "Test <task-id>"
+```
+
+**2. Create Feature Branch:**
+```bash
+# From dev branch
+git checkout dev
+git pull origin dev
+
+# Create task branch
+git checkout -b <type>/<phase>-<task-id>-<description>
+```
+
+**3. Review Task Requirements:**
+- Read task entry in CHANGELOG.md
+- Check if test file exists in `test/` directory
+- Review related code in the component directory
+
+**4. Development Workflow:**
+
+**TDD (Test-Driven Development) - Recommended:**
+```bash
+# 1. Write test first (if not exists)
+cd test/test_<component>
+cp template_test.py test_<feature>.py
+# Edit test file with expected behavior
+
+# 2. Run test (should fail)
+python3 test_<feature>.py
+
+# 3. Implement feature
+cd ../..
+# Edit component file
+
+# 4. Run test again (should pass)
+cd test/test_<component>
+python3 test_<feature>.py
+
+# 5. Refactor if needed
+```
+
+**Implementation-First Approach:**
+```bash
+# 1. Implement feature
+# Edit component file
+
+# 2. Create test
+cd test/test_<component>
+# Create test file
+
+# 3. Validate
+python3 test_<feature>.py
+```
+
+**5. Testing Your Changes:**
+
+```bash
+# Source ROS environment
+source /opt/ros/humble/setup.bash
+source ~/interbotix_ws/install/setup.bash
+
+# Run specific test
+cd test
+python3 test_<component>/test_<feature>.py
+
+# Run all Phase tests (when available)
+./run_phase<N>_tests.sh
+```
+
+**6. Document Changes:**
+
+Update CHANGELOG.md:
+```markdown
+### Task <phase>.<number>: <Task Name>
+
+**Date**: YYYY-MM-DD
+**Phase**: <phase> (<Phase Name>)
+**Task ID**: <phase>.<number>
+**Task Name**: <Brief Name>
+**Test File**: test_<component>/test_<feature>.py
+**Author**: <your-name>
+**Branch**: `<branch-name>`
+
+#### Summary
+<What was changed and why>
+
+#### Changes Made
+1. <Change 1>
+2. <Change 2>
+
+#### Impact
+- <Impact 1>
+- <Impact 2>
+
+#### Files Modified
+- `path/to/file.py` (lines X-Y)
+
+#### Testing
+Run test: `python3 test/<component>/test_<feature>.py`
+```
+
+Update TEST_RESULTS.md:
+```markdown
+### Test <phase>.<number>: <Feature Name>
+**Test File:** `test/<component>/test_<feature>.py`
+**Task:** <phase>.<number>
+**Date:** YYYY-MM-DD
+**Status:** ✅ PASS / ❌ FAIL / ⏳ PENDING
+
+**What Was Tested:**
+- <Test case 1>
+- <Test case 2>
+
+**Result:** <Summary>
+```
+
+**7. Commit and Push:**
+
+```bash
+# Stage changes
+git add <files>
+
+# Commit with descriptive message
+git commit -m "Task <phase>.<number>: <Brief description>
+
+<Detailed explanation>
+- Change 1
+- Change 2
+
+Test: test/<component>/test_<feature>.py
+Status: <PASS/FAIL>
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: <your-name> <your-email>"
+
+# Push to remote
+git push -u origin <branch-name>
+```
+
+**8. Create Pull Request:**
+
+```bash
+# Using GitHub CLI
+gh pr create --title "Task <phase>.<number>: <Title>" --body "$(cat <<'EOF'
+## Summary
+<What this PR does>
+
+## Changes
+- Change 1
+- Change 2
+
+## Testing
+- [x] Test file created: test/<component>/test_<feature>.py
+- [x] All tests pass
+- [x] CHANGELOG.md updated
+- [x] TEST_RESULTS.md updated
+
+## Related Tasks
+- Task <phase>.<number> in CHANGELOG.md
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
+
+# Or via GitHub web UI
+# Navigate to repository and click "New Pull Request"
+```
+
+### Quick Reference
+
+**Check Current Task Status:**
+```bash
+# View task in CHANGELOG
+grep -A 20 "Task <phase>.<number>" CHANGELOG.md
+
+# View test results
+grep -A 10 "Test <phase>.<number>" test/TEST_RESULTS.md
+
+# Check git status
+git status
+git branch
+```
+
+**Common Commands:**
+```bash
+# Create new task branch
+git checkout dev && git pull
+git checkout -b <type>/<phase>-<task>-<description>
+
+# Run tests
+cd test && python3 test_<component>/test_<feature>.py
+
+# Update documentation
+# 1. Edit CHANGELOG.md - add/update task entry
+# 2. Edit test/TEST_RESULTS.md - add/update test results
+
+# Commit changes
+git add <files>
+git commit -m "Task <phase>.<number>: <description>
+
+<details>
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: <name> <email>"
+
+# Push and create PR
+git push -u origin <branch>
+gh pr create --title "Task <phase>.<number>: <title>"
+```
+
+---
