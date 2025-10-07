@@ -1316,7 +1316,31 @@ class ArmController:
 _global_controller = None
 
 def get_controller() -> ArmController:
-    """Get or create global controller instance"""
+    """
+    Get or create global controller instance.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+
+    Returns:
+        ArmController: The global controller instance
+    """
+    import warnings
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly: controller = ArmController(robot_name='vx300s', group_name='arm'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller is None:
         _global_controller = ArmController()
@@ -1324,9 +1348,40 @@ def get_controller() -> ArmController:
     return _global_controller
 
 def move_arm(position=None, joints=None, pose=None, **kwargs) -> Dict:
-    """Simple function to move arm"""
+    """
+    Simple function to move arm using global controller.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            move_arm(position=[0.3, 0.0, 0.2])
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+            controller.move_to_position([0.3, 0.0, 0.2])
+
+    Args:
+        position: Target position [x, y, z]
+        joints: Target joint angles
+        pose: Named pose ('home', 'ready', 'sleep')
+        **kwargs: Additional arguments passed to movement methods
+
+    Returns:
+        Dict: Movement result
+    """
+    import warnings
+    warnings.warn(
+        "move_arm() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly and call movement methods directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     controller = get_controller()
-    
+
     if pose is not None:
         return controller.move_to_pose(pose, **kwargs)
     elif joints is not None:
@@ -1337,11 +1392,59 @@ def move_arm(position=None, joints=None, pose=None, **kwargs) -> Dict:
         return {"success": False, "error": "No target specified"}
 
 def get_arm_state() -> Dict:
-    """Simple function to get arm state"""
+    """
+    Simple function to get arm state from global controller.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            state = get_arm_state()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+            state = controller.get_arm_state()
+
+    Returns:
+        Dict: Current arm state
+    """
+    import warnings
+    warnings.warn(
+        "get_arm_state() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly and call get_arm_state() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().get_arm_state()
 
 def cleanup():
-    """Cleanup global controller"""
+    """
+    Cleanup global controller.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            cleanup()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+            # ... use controller ...
+            controller.shutdown()
+    """
+    import warnings
+    warnings.warn(
+        "cleanup() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly and call shutdown() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller:
         _global_controller.shutdown()

@@ -753,6 +753,116 @@ arm.cancel_trajectory(trajectory_id)
 
 ---
 
+
+### Task 1.9: Remove Global Controller Singleton Pattern
+
+**Date**: 2025-10-07
+**Task ID**: 1.9
+**Task Name**: Remove Global Controller Singleton Pattern
+**Author**: anugraha09
+**Branch**: `fix/race-condition-position-monitoring`
+
+#### Summary
+Deprecated the global controller singleton pattern (lines 1316-1348 in arm_controller.py) which used module-level functions `get_controller()`, `move_arm()`, `get_arm_state()`, and `cleanup()`. This pattern created hidden global state, made testing difficult, and prevented multiple controller instances. All singleton functions now emit deprecation warnings and users are guided to manage controller instances explicitly.
+
+#### Changes Made
+1. **Added Deprecation Warnings to All Singleton Functions**:
+   - `get_controller()`: Now warns users to create explicit ArmController instances
+   - `move_arm()`: Warns to use controller.move_to_position(), .move_to_pose(), or .move_joints()
+   - `get_arm_state()`: Warns to use controller.get_arm_state()
+   - `cleanup()`: Warns to use controller.shutdown()
+
+2. **Enhanced Documentation**:
+   - Added detailed docstrings with deprecation notices
+   - Included migration examples in each function's documentation
+   - Specified removal timeline (v2.0)
+
+3. **Created Comprehensive Migration Guide**:
+   - Complete migration guide at `gemini-live/docs/MIGRATION_GUIDE_SINGLETON_REMOVAL.md`
+   - Before/after examples for all affected functions
+   - Best practices including context managers and dependency injection
+   - FAQ section addressing common migration concerns
+   - Timeline for deprecation and removal
+
+#### Technical Details
+
+**Deprecation Warning Implementation:**
+```python
+def get_controller() -> ArmController:
+    """
+    Get or create global controller instance.
+
+    .. deprecated:: 1.9
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = ArmController(robot_name='vx300s', group_name='arm')
+            controller.initialize()
+    """
+    import warnings
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly: controller = ArmController(robot_name='vx300s', group_name='arm'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    # ... existing implementation ...
+```
+
+**Migration Example:**
+```python
+# Before (deprecated):
+from arm_controller import get_controller, move_arm
+controller = get_controller()
+move_arm(position=[0.3, 0.0, 0.2])
+
+# After (recommended):
+from arm_controller import ArmController
+controller = ArmController(robot_model='vx300s', robot_name='follower_left')
+controller.initialize()
+controller.move_to_position([0.3, 0.0, 0.2])
+controller.shutdown()
+```
+
+#### Impact
+- **Architecture Improvement**: Eliminates anti-pattern of hidden global state
+- **Better Testability**: Enables proper mocking and isolation in unit tests
+- **Multi-Robot Support**: Allows managing multiple robot arm instances simultaneously
+- **Clear Ownership**: Makes controller lifecycle management explicit and trackable
+- **Thread Safety**: Reduces risks from shared global state in concurrent operations
+- **Backward Compatible**: All existing code continues to work in v1.9 (with warnings)
+- **Breaking Change in v2.0**: Users must migrate before v2.0 release
+
+#### Files Modified
+- `gemini-live/arm_controller.py` (lines 1316-1441: added deprecation warnings and enhanced documentation)
+- `gemini-live/docs/MIGRATION_GUIDE_SINGLETON_REMOVAL.md` (new file: comprehensive migration guide)
+
+#### Migration Path
+1. **v1.9 (Current)**: Deprecation warnings added, old API still functional
+2. **User Migration Period**: Update code using migration guide
+3. **v2.0 (Planned)**: Complete removal of singleton functions
+
+#### Testing Recommendations
+1. Enable deprecation warnings in your code: `warnings.simplefilter('always', DeprecationWarning)`
+2. Run existing tests to identify all usage of deprecated functions
+3. Update tests to use explicit controller instances
+4. Test with dry-run mode for hardware-independent validation: `ArmController(dry_run=True)`
+5. Verify no deprecation warnings after migration
+6. Test multiple controller instances if using multiple arms
+
+#### Migration Resources
+- **Migration Guide**: `gemini-live/docs/MIGRATION_GUIDE_SINGLETON_REMOVAL.md`
+- **Deprecation Warnings**: Clear error messages with specific guidance
+- **Examples**: Before/after code samples in docstrings and migration guide
+- **Best Practices**: Context managers, class-based approaches, dependency injection
+
+---
+
 ## Template for Future Entries
 
 ### Task X.X: [Task Name]
