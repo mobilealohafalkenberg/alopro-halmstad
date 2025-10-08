@@ -6,19 +6,220 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **New team members:** Before using Jira integration features (like `/task` command), you must set up your personal Atlassian MCP connection.
 
-📋 **Setup Guide:** See [.claude/JIRA_MCP_SETUP.md](.claude/JIRA_MCP_SETUP.md) for complete instructions.
+📋 **Full Setup Guide:** See [.claude/JIRA_MCP_SETUP.md](.claude/JIRA_MCP_SETUP.md) for complete instructions.
 
-**Quick Setup:**
-1. Generate Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens
-2. Add to your shell profile (~/.bashrc or ~/.zshrc):
-   ```bash
-   export ATLASSIAN_EMAIL="your-email@example.com"
-   export ATLASSIAN_API_TOKEN="your-token-here"
+### Quick Setup (5 Minutes)
+
+1. **Generate Atlassian API token:** https://id.atlassian.com/manage-profile/security/api-tokens
+   - Click "Create API token"
+   - Label: `Claude Code MCP`
+   - Copy the token (you won't see it again!)
+
+2. **Tell Claude Code to help you set up:**
    ```
-3. Reload shell: `source ~/.bashrc`
-4. Test with Claude Code: `/task ALOHAMOB-39`
+   Help me set up my Atlassian credentials for Jira integration
+   ```
 
-**⚠️ Important:** Never commit credentials to git! Use environment variables only.
+   Claude will:
+   - Detect your shell type (bash/zsh)
+   - Find the correct config file (~/.bashrc or ~/.zshrc)
+   - Add the environment variables safely
+   - Test the configuration
+   - Restart Claude Code if needed
+
+3. **Provide your credentials when prompted:**
+   - Email: your-email@example.com
+   - API Token: (paste the token you generated)
+
+4. **Test it works:**
+   ```
+   /task 2.6
+   ```
+
+### Manual Setup (If Preferred)
+
+If you prefer to set it up manually:
+
+```bash
+# 1. Edit your shell config file
+nano ~/.bashrc  # or ~/.zshrc if you use zsh
+
+# 2. Add these lines at the end:
+export ATLASSIAN_EMAIL="your-email@example.com"
+export ATLASSIAN_API_TOKEN="your-token-here"
+
+# 3. Save and reload
+source ~/.bashrc  # or source ~/.zshrc
+
+# 4. Restart Claude Code
+# Exit current session (Ctrl+D) and start again
+```
+
+### Troubleshooting Setup
+
+If Claude asks you to authenticate every time:
+```
+The MCP setup isn't working correctly. Help me fix it.
+```
+
+Claude will:
+- Check if environment variables are set
+- Verify .mcp.json configuration
+- Test the Jira connection
+- Fix any issues found
+
+### For Claude: How to Help with Setup
+
+**When a user says:** "Help me set up my Atlassian credentials" or similar:
+
+**Step 1: Detect shell type**
+```bash
+echo $SHELL
+```
+- If contains "bash" → use ~/.bashrc
+- If contains "zsh" → use ~/.zshrc
+- Otherwise → ask user which shell they use
+
+**Step 2: Check if environment variables already configured**
+```bash
+cat ~/.bashrc | grep ATLASSIAN_EMAIL
+cat ~/.zshrc | grep ATLASSIAN_EMAIL
+```
+
+**Step 3: If not configured, ask for credentials**
+- "What's your Atlassian email?"
+- "Paste your API token here (it's safe, I won't show it)"
+
+**Step 4: Add environment variables to shell config**
+```bash
+# Append to the file (don't overwrite!)
+echo "" >> ~/.bashrc
+echo "# Atlassian MCP Credentials for Claude Code" >> ~/.bashrc
+echo "export ATLASSIAN_EMAIL=\"user@example.com\"" >> ~/.bashrc
+echo "export ATLASSIAN_API_TOKEN=\"token-here\"" >> ~/.bashrc
+```
+
+**Step 5: Reload the shell**
+```bash
+source ~/.bashrc
+```
+
+**Step 6: Verify environment variables work**
+```bash
+echo $ATLASSIAN_EMAIL
+# Should show the email
+```
+
+**Step 7: Check if .mcp.json exists**
+```bash
+ls -la .mcp.json
+```
+
+**Step 8: If .mcp.json doesn't exist, create it**
+
+⚠️ **IMPORTANT:** This file is in .gitignore and should NEVER be committed to git. Each user creates it on their own machine.
+
+```bash
+cat > .mcp.json << 'EOF'
+{
+  "mcpServers": {
+    "atlassian": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-atlassian"],
+      "env": {
+        "ATLASSIAN_EMAIL": "${ATLASSIAN_EMAIL}",
+        "ATLASSIAN_API_TOKEN": "${ATLASSIAN_API_TOKEN}"
+      }
+    }
+  }
+}
+EOF
+```
+
+Verify it was created:
+```bash
+cat .mcp.json
+```
+
+**Step 9: If .mcp.json exists but wrong format, fix it**
+
+Check current content:
+```bash
+cat .mcp.json
+```
+
+If it contains "url" or "oauth" instead of local server, replace it:
+```bash
+# Backup the old file
+mv .mcp.json .mcp.json.backup
+
+# Create correct version
+cat > .mcp.json << 'EOF'
+{
+  "mcpServers": {
+    "atlassian": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-atlassian"],
+      "env": {
+        "ATLASSIAN_EMAIL": "${ATLASSIAN_EMAIL}",
+        "ATLASSIAN_API_TOKEN": "${ATLASSIAN_API_TOKEN}"
+      }
+    }
+  }
+}
+EOF
+```
+
+**Step 10: Verify .mcp.json is in .gitignore**
+```bash
+cat .gitignore | grep -E "(\.mcp\.json|mcp)"
+```
+Should see `.mcp.json` listed (usually on line 1).
+
+**Step 11: Test Jira connection**
+```
+Can you fetch task ALOHAMOB-39 from Jira?
+```
+- If works: "✅ Setup complete!"
+- If fails: Recheck steps above
+
+**Step 12: Inform user they need to restart**
+"Please exit Claude Code (Ctrl+D) and restart it for changes to take effect."
+
+**Step 13: After restart, confirm everything works**
+Try a simple Jira fetch to validate:
+```
+/task 2.6
+```
+
+---
+
+**CRITICAL SECURITY NOTES FOR CLAUDE:**
+- ⛔ **NEVER commit .mcp.json to git** - it's already in .gitignore
+- ⛔ **NEVER suggest adding .mcp.json to the repository**
+- ✅ Each team member creates .mcp.json locally on their machine
+- ✅ Environment variables go in ~/.bashrc or ~/.zshrc (not in repo)
+- ✅ See `.claude/mcp-config-template.json` for reference template
+
+### Common Issues and Solutions
+
+**Issue:** "Environment variables not set"
+```
+Help me check if my Atlassian credentials are configured
+```
+Claude will check and guide you through setup.
+
+**Issue:** "OAuth prompt appears every time"
+This means .mcp.json is using remote OAuth instead of API tokens.
+```
+My MCP keeps asking for OAuth. Help me switch to API tokens.
+```
+
+**Issue:** "Permission denied"
+You need access to the ALOHAMOB project in Jira.
+Contact: [team lead name]
+
+**⚠️ Security:** Never commit credentials to git! Claude will help you set them up in your personal shell config (~/.bashrc or ~/.zshrc) which is NOT in the repository.
 
 ## Repository Structure
 

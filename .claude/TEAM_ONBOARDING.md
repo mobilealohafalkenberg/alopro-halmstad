@@ -21,15 +21,38 @@ Once set up, you can:
 
 ## Setup Steps (5 minutes)
 
-### Step 1: Generate API Token
+### Easy Method: Let Claude Help You! 🤖
 
-1. Go to: https://id.atlassian.com/manage-profile/security/api-tokens
-2. Click "Create API token"
-3. Name it: `Claude Code MCP`
-4. **Copy the token** (you won't see it again!)
-5. Save it securely (password manager recommended)
+1. **Generate API Token:**
+   - Go to: https://id.atlassian.com/manage-profile/security/api-tokens
+   - Click "Create API token"
+   - Name it: `Claude Code MCP`
+   - **Copy the token** (you won't see it again!)
 
-### Step 2: Configure Environment Variables
+2. **Start Claude Code** in this repo directory
+
+3. **Ask Claude to set it up:**
+   ```
+   Help me set up my Atlassian credentials for Jira integration
+   ```
+
+4. **Claude will:**
+   - Detect your shell (bash/zsh)
+   - Find the right config file (~/.bashrc or ~/.zshrc)
+   - Ask for your email and API token
+   - Add them securely to your shell config
+   - Test that everything works
+   - Tell you to restart Claude Code
+
+5. **Restart Claude Code** and you're done! ✅
+
+### Manual Method (If You Prefer)
+
+If you'd rather do it manually:
+
+**Step 1: Generate API Token** (same as above)
+
+**Step 2: Configure Environment Variables**
 
 Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
 
@@ -44,10 +67,13 @@ Reload your shell:
 source ~/.bashrc  # or source ~/.zshrc
 ```
 
-### Step 3: Verify Setup
+**Step 3: Restart Claude Code**
 
-Start Claude Code in this repo and test:
+Exit (Ctrl+D) and restart Claude Code for changes to take effect.
 
+**Step 4: Verify Setup**
+
+Test with:
 ```
 Can you fetch task ALOHAMOB-39 from Jira?
 ```

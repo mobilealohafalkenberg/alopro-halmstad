@@ -31,6 +31,44 @@ This directory contains Claude Code configuration and team documentation.
 ## Available Slash Commands
 
 See the `commands/` directory for available slash commands:
-- `/task` - Start work on a Jira task (fetch, branch, setup)
 
-More commands coming soon!
+### `/task [task_id]`
+Start work on a Jira task - fetches details, creates branch, sets up workspace
+
+**Usage:**
+```bash
+/task 2.6              # Using task number (easiest!)
+/task ALOHAMOB-39      # Using full Jira ID
+```
+
+**What it does:**
+1. Fetches task from Jira (supports both task number and full ID)
+2. Creates properly named feature branch
+3. Updates task status to "In Progress" in Jira
+4. Sets up workspace with relevant files
+5. Creates todo list from task description
+6. Asks how you'd like to proceed
+
+### `/done`
+Complete current task - updates CHANGELOG, commits, updates Jira
+
+**Usage:**
+```bash
+/done
+```
+
+**What it does:**
+1. Identifies task from current branch name
+2. Reviews all changes made
+3. Runs tests if applicable
+4. **Generates detailed CHANGELOG entry** following project template
+5. Commits all changes with proper message format
+6. Updates Jira task to "Done" status
+7. Offers to push branch and create PR
+8. Suggests next task to work on
+
+**CHANGELOG Generation:**
+- Automatically follows the exact template from CHANGELOG.md
+- Includes: Summary, Problem, Solution, Code Changes, Impact, Testing
+- Adds proper line numbers and file references
+- Maintains consistent formatting
