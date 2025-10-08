@@ -117,27 +117,30 @@ class GripperController:
         def monitor():
             while self.initialized:
                 try:
-                    # Get current gripper position
+                    # Get current gripper position from hardware
                     with self.bot.core.js_mutex:
                         gripper_index = self.bot.gripper.left_finger_index
-                        self.gripper_position = self.bot.core.joint_states.position[gripper_index]
-                    
-                    # Update state based on position
+                        position = self.bot.core.joint_states.position[gripper_index]
+
+                    # Update shared state with lock protection
                     with self.state_lock:
+                        self.gripper_position = position
+
+                        # Update state based on position
                         if self.current_state in [GripperState.OPENING, GripperState.CLOSING]:
                             # Check if movement completed
-                            if self.gripper_position >= self.OPEN_THRESHOLD:
+                            if position >= self.OPEN_THRESHOLD:
                                 if self.current_state == GripperState.OPENING:
                                     self.current_state = GripperState.OPEN
-                            elif self.gripper_position <= self.CLOSE_THRESHOLD:
+                            elif position <= self.CLOSE_THRESHOLD:
                                 if self.current_state == GripperState.CLOSING:
                                     self.current_state = GripperState.CLOSED
-                    
+
                 except Exception:
                     pass  # Silently ignore errors in monitor thread
-                
+
                 time.sleep(0.1)  # Check 10 times per second
-        
+
         monitor_thread = threading.Thread(target=monitor, daemon=True)
         monitor_thread.start()
     
@@ -196,7 +199,7 @@ class GripperController:
     def get_gripper_state(self) -> Dict:
         """
         Get current gripper state and position.
-        
+
         Returns:
             Dictionary containing:
             - success: bool
@@ -212,17 +215,21 @@ class GripperController:
                 "position": 0.0,
                 "position_normalized": 0.0
             }
-        
+
         with self.state_lock:
+            # Capture position while holding lock to prevent race condition
+            position = self.gripper_position
+            state = self.current_state.value
+
             # Normalize position from 0 (closed) to 1 (open)
             pos_range = FOLLOWER_GRIPPER_JOINT_OPEN - FOLLOWER_GRIPPER_JOINT_CLOSE
-            pos_normalized = (self.gripper_position - FOLLOWER_GRIPPER_JOINT_CLOSE) / pos_range
+            pos_normalized = (position - FOLLOWER_GRIPPER_JOINT_CLOSE) / pos_range
             pos_normalized = max(0.0, min(1.0, pos_normalized))  # Clamp to [0, 1]
-            
+
             return {
                 "success": True,
-                "state": self.current_state.value,
-                "position": self.gripper_position,
+                "state": state,
+                "position": position,
                 "position_normalized": pos_normalized,
                 "position_open": FOLLOWER_GRIPPER_JOINT_OPEN,
                 "position_closed": FOLLOWER_GRIPPER_JOINT_CLOSE
