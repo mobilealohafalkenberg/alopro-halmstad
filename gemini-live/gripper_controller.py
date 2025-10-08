@@ -9,6 +9,7 @@ import time
 import threading
 from enum import Enum
 from typing import Dict, Optional, Tuple
+import logging
 
 from aloha.robot_utils import move_arms, move_grippers, torque_on
 from aloha.constants import (
@@ -56,6 +57,7 @@ class GripperController:
         self.current_state = GripperState.UNKNOWN
         self.gripper_position = 0.0
         self.state_lock = threading.Lock()
+        self.monitor_failure_count = 0
         
         # Gripper position thresholds
         self.OPEN_THRESHOLD = FOLLOWER_GRIPPER_JOINT_OPEN - 0.1
@@ -132,9 +134,21 @@ class GripperController:
                             elif self.gripper_position <= self.CLOSE_THRESHOLD:
                                 if self.current_state == GripperState.CLOSING:
                                     self.current_state = GripperState.CLOSED
-                    
-                except Exception:
-                    pass  # Silently ignore errors in monitor thread
+                    # Reset failure counter on success
+                    self.monitor_failure_count=0
+                except Exception as e:
+                    self.monitor_failure_count+=1
+                    logging.error(
+                        f"Gripper position monitor failed (failure #{self.monitor_failure_count}):"
+                        f"{type(e).__name__}: {e}",
+                        exc_info=True
+                    )
+                    #Alert if failures are excessive
+                    if self.monitor_failure_count>=5:
+                        logging.critical(
+                            f"Gripper monitor has failed {self.monitor_failure_count} consecutive times!"
+                            "This may indicate a serious hardware or connection issue. "
+                        )
                 
                 time.sleep(0.1)  # Check 10 times per second
         

@@ -47,6 +47,95 @@ Each entry should follow this structure:
 
 ---
 
+## 2025-10-08
+
+### Phase 2 - Gripper Controller
+
+### Task 2.1: Add Exception Logging to Gripper Position Monitor
+
+**Date**: 2025-10-08
+**Phase**: 2 (Gripper Controller)
+**Task ID**: 2.1
+**Task Name**: Add Exception Logging to Gripper Position Monitor
+**Test File**: test/test_gripper/test_exception_logging_standalone.py
+**Author**: fasna
+**Branch**: `fix/2.1-2.2-gripper-monitor-safety_fas`
+
+#### Summary
+Fixed critical silent failure issue in gripper position monitoring thread. Previously, all exceptions were suppressed with bare `except: pass` at lines 136-137, causing the system to operate with stale gripper position data when errors occurred. Implemented comprehensive exception logging with error counting and critical alerts for repeated failures.
+
+#### Problem Identified
+The position monitoring thread runs at 10Hz and accesses robot joint states via `bot.core.js_mutex`. When exceptions occur (ROS disconnects, mutex timeouts, hardware faults), they were completely suppressed, causing:
+- No visibility into monitor failures
+- Stale gripper position data
+- Incorrect state reporting to users
+- Failed manipulation tasks due to outdated state
+- No way to detect hardware issues
+
+#### Solution Implemented
+1. **Import logging module** (Line 12)
+2. **Add error counter** - `self.monitor_failure_count = 0` in `__init__` (Line 60)
+3. **Replace bare except** - Changed to `except Exception as e:` with detailed logging (Lines 139-151):
+   - Logs exception type and message
+   - Includes full stack trace with `exc_info=True`
+   - Increments failure counter on each exception
+4. **Add recovery logic** - Resets counter to 0 on successful read (Line 138)
+5. **Critical alerts** - Logs CRITICAL message when failures >= 5 consecutive times
+
+#### Code Changes
+**Before (Lines 136-137):**
+```python
+except Exception:
+    pass  # Silently ignore errors in monitor thread
+```
+
+**After (Lines 137-151):**
+```python
+self.monitor_failure_count = 0
+
+except Exception as e:
+    self.monitor_failure_count += 1
+    logging.error(
+        f"Gripper position monitor failed (failure #{self.monitor_failure_count}): "
+        f"{type(e).__name__}: {e}",
+        exc_info=True
+    )
+
+    if self.monitor_failure_count >= 5:
+        logging.critical(
+            f"Gripper monitor has failed {self.monitor_failure_count} consecutive times! "
+            "This may indicate a serious hardware or connection issue."
+        )
+```
+
+#### Impact
+- **Critical Observability**: Failures are now visible in logs with full context
+- **Early Detection**: Critical alerts identify persistent hardware issues
+- **Better Debugging**: Full stack traces help diagnose root causes
+- **Reliability**: Error recovery logic prevents permanent stale state
+- **Production Ready**: Monitoring thread now production-grade with proper error handling
+
+#### Testing
+Created comprehensive test suite (`test_exception_logging_standalone.py`) with 5 test scenarios:
+1. ✅ AttributeError logging (simulates ROS disconnect)
+2. ✅ IndexError logging (simulates data corruption)
+3. ✅ Critical alert after 5+ failures
+4. ✅ Error recovery (counter reset on success)
+5. ✅ Thread safety verification
+
+All tests passed successfully.
+
+#### Files Modified
+- `gripper_controller.py` (lines 12, 60, 137-151)
+- `test/test_gripper/test_exception_logging_standalone.py` (new file)
+
+#### Related Tasks
+- Part of Phase 2 gripper controller improvements
+- Addresses safety and reliability requirements
+- Follows same pattern as Task 1.x arm controller exception handling
+
+---
+
 ## 2025-10-07
 
 ### Phase 1 - Infrastructure & Testing
