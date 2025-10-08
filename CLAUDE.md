@@ -2,6 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Team Setup - Jira Integration
+
+**New team members:** Before using Jira integration features (like `/task` command), you must set up your personal Atlassian MCP connection.
+
+📋 **Setup Guide:** See [.claude/JIRA_MCP_SETUP.md](.claude/JIRA_MCP_SETUP.md) for complete instructions.
+
+**Quick Setup:**
+1. Generate Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens
+2. Add to your shell profile (~/.bashrc or ~/.zshrc):
+   ```bash
+   export ATLASSIAN_EMAIL="your-email@example.com"
+   export ATLASSIAN_API_TOKEN="your-token-here"
+   ```
+3. Reload shell: `source ~/.bashrc`
+4. Test with Claude Code: `/task ALOHAMOB-39`
+
+**⚠️ Important:** Never commit credentials to git! Use environment variables only.
+
 ## Repository Structure
 
 This repository contains three separate projects for controlling a Mobile ALOHA robot system:

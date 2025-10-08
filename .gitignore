@@ -1,0 +1,11 @@
+.mcp.json
+
+# Claude Code - User credentials (never commit these!)
+.claude/credentials.json
+.claude/user-config.json
+.env.local
+.env.claude
+
+# MCP credentials
+**/mcp-credentials.json
+**/.mcp-credentials
