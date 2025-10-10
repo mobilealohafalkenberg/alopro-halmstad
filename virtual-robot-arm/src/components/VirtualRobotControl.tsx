@@ -225,19 +225,27 @@ export function VirtualRobotControl({ robotController, onRobotStateChange }: Vir
       for (const call of toolCall.functionCalls || []) {
         console.log(`[Gemini] Executing tool: ${call.name}`, call.args);
         setTaskStatus(`Executing: ${call.name || 'unknown'}`);
-        const result = await handleToolCall(call.name || '', call.args);
-        console.log(`[Gemini] Tool result for ${call.name}:`, result);
 
+        // Fire-and-forget pattern: Return immediately, execute asynchronously
         responses.push({
           name: call.name,
           id: call.id,
-          response: result,
+          response: { success: true, status: 'executed' },
         });
+
+        // Execute command asynchronously (don't await)
+        handleToolCall(call.name || '', call.args)
+          .then(result => {
+            console.log(`[Gemini] Tool completed: ${call.name}`, result);
+          })
+          .catch(err => {
+            console.error(`[Gemini] Tool error: ${call.name}`, err);
+          });
       }
 
-      // Send responses back to Gemini
+      // Send responses back to Gemini immediately
       if (responses.length > 0) {
-        console.log('[Gemini] 📤 Sending tool responses:', responses);
+        console.log('[Gemini] 📤 Sending tool responses (fire-and-forget):', responses);
         client.sendToolResponse({ functionResponses: responses });
       }
 

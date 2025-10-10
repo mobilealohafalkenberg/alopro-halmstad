@@ -282,6 +282,8 @@ npm run build     # Build for production
 
 ### Virtual Robot Arm Simulator (virtual-robot-arm/)
 
+**Purpose:** Test Gemini tool functions and voice control features without physical hardware. 100% compatible with real robot API.
+
 ```bash
 npm install       # Install dependencies
 npm start         # Start dev server on port 3000
@@ -293,17 +295,50 @@ npm run build     # Build for production
 
 **Key Features:**
 - 3D visualization of ViperX 300s robot arm
-- Voice control via Gemini 2.5 Live API
+- Voice control via Gemini 2.5 Flash Live API
 - Interactive scene with table, apple, and cube
 - Realistic kinematics and smooth animations
 - No hardware required - runs in browser
+- **Identical tool functions** to real robot (5 core functions)
+- **Fire-and-forget response pattern** matching real robot
 
 **Setup:**
 1. Copy `.env.example` to `.env`
 2. Add your `REACT_APP_GEMINI_API_KEY`
 3. Run `npm install && npm start`
 
-See `virtual-robot-arm/SETUP_GUIDE.md` for detailed instructions.
+**What You Can Test on Virtual Robot:**
+- ✅ **Tool function development** - All 5 core functions identical to real robot
+- ✅ **Voice control logic** - Gemini 2.5 Flash integration
+- ✅ **Trajectory planning** - Multi-waypoint paths with gripper coordination
+- ✅ **UI/UX features** - Control interfaces, status displays
+- ✅ **Camera feed display** - Virtual camera system (gripper + overhead)
+- ✅ **Error handling** - Workspace limits, safety constraints
+- ⚠️ **Basic visual testing** - Camera layout and streaming (NOT actual CV algorithms)
+
+**What Requires Real Robot:**
+- ❌ **Computer vision algorithms** - Real sensor data needed
+- ❌ **Physical hardware testing** - Servo performance, actual movement validation
+- ❌ **ROS2 integration** - Real robot uses ROS2, virtual uses direct kinematics
+- ❌ **Real-time camera processing** - RealSense D405 specific features
+
+**Development Workflow:**
+1. **Develop feature on virtual robot** (fast iteration, no hardware)
+2. **Test thoroughly** - Voice commands, edge cases, error handling
+3. **Switch to real robot** - Same tool functions, same response pattern
+4. **Validate on hardware** - Confirm physical behavior matches virtual
+
+**Tool Function Compatibility:**
+Virtual and real robot share identical implementations:
+- `move_arm` - Single-point movement
+- `move_arm_trajectory` - Multi-waypoint paths with gripper actions
+- `control_gripper` - Open/close commands
+- `get_arm_status` - Joint angles and end-effector position
+- `get_gripper_status` - Gripper state and position
+
+Both use **fire-and-forget pattern**: Return `{success: true, status: 'executed'}` immediately to Gemini, execute asynchronously.
+
+See [VIRTUAL_ROBOT_DOCUMENTATION.md](VIRTUAL_ROBOT_DOCUMENTATION.md) for detailed architecture.
 
 ### Python Scripts (python_scripts/)
 
