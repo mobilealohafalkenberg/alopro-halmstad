@@ -7,6 +7,10 @@ This simulates how Gemini could call gripper functions and get feedback.
 
 import time
 import json
+import sys
+import os
+# Add parent directory to path to import controllers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from gripper_controller import GripperController
 
 

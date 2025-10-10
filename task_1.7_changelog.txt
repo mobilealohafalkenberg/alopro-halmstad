@@ -1,0 +1,69 @@
+### Task 1.7: Improve Emergency Stop State Management
+
+**Date**: 2025-10-07
+**Task ID**: 1.7
+**Task Name**: Improve Emergency Stop State Management
+**Author**: anugraha09
+**Branch**: `fix/race-condition-position-monitoring`
+
+#### Summary
+Enhanced emergency stop functionality to properly prevent operations after an emergency stop until the system is explicitly resumed and validated. Previously, `emergency_stop()` disabled torque and set state to ERROR, but other methods could still attempt operations since `initialized=True` remained set. Now all movement methods check for ERROR state and reject operations until `resume_after_stop()` is called with comprehensive recovery validation.
+
+#### Changes Made
+1. Added ERROR state checks to all 5 movement methods:
+   - `move_joints()` - Rejects movements if in ERROR state
+   - `move_to_position()` - Rejects movements if in ERROR state
+   - `move_to_pose()` - Rejects movements if in ERROR state
+   - `execute_trajectory()` - Rejects trajectory execution if in ERROR state
+   - `set_speed()` - Rejects speed changes if in ERROR state
+
+2. Enhanced `emergency_stop()` method:
+   - Added comprehensive docstring explaining behavior and recovery process
+   - Sets system to ERROR state after disabling torque
+   - Provides clear user feedback with warning indicators
+   - Instructs user to call `resume_after_stop()` for recovery
+
+3. Enhanced `resume_after_stop()` method:
+   - Validates system is actually in ERROR state before resuming
+   - Re-enables motor torque safely
+   - Captures current arm position after torque enable
+   - Validates current position against safety constraints
+   - Returns detailed status with warnings if position is unsafe
+   - Recommends moving to safe pose if position validation fails
+   - Preserves ERROR state if recovery fails
+
+#### Technical Details
+
+**ERROR State Check Pattern:**
+```python
+# Check if system is in ERROR state
+with self.state_lock:
+    if self.current_state == ArmState.ERROR:
+        return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+```
+
+**Enhanced Methods:**
+- `emergency_stop()`: Disables torque, sets ERROR state, provides clear feedback
+- `resume_after_stop()`: Validates state, re-enables torque, captures position, checks safety, clears ERROR state
+
+#### Impact
+- **Critical Safety Fix**: Prevents operations after emergency stop until explicit validated resume
+- **Proper State Management**: ERROR state enforced across all movement operations
+- **Better Recovery**: Validates system state and position safety before resuming
+- **User Guidance**: Clear error messages guide emergency stop and recovery process
+- **Thread Safety**: All state checks protected by state_lock
+
+#### Files Modified
+- `gemini-live/arm_controller.py`:
+  - Lines 424-427, 504-507, 627-634, 693-700, 1145-1152: ERROR state checks
+  - Lines 1197-1221: Enhanced `emergency_stop()`
+  - Lines 1223-1297: Enhanced `resume_after_stop()`
+
+#### Testing Recommendations
+1. Test emergency stop during various operations
+2. Verify all movement methods reject commands after emergency stop
+3. Test resume with safe and unsafe robot positions
+4. Verify safety validation during recovery
+5. Test thread safety with concurrent calls
+
+---

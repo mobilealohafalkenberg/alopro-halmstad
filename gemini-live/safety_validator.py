@@ -21,13 +21,17 @@ class RiskLevel(Enum):
 
 @dataclass
 class WorkspaceBounds:
-    """Workspace boundary configuration for the robot"""
-    x_min: float = 0.10   # meters - minimum forward distance
-    x_max: float = 0.65   # meters - extended forward reach for reaching down
-    y_min: float = -0.25  # meters - right side limit
-    y_max: float = 0.25   # meters - left side limit
-    z_min: float = -0.20  # meters - below table level for reaching down
-    z_max: float = 0.40   # meters - maximum height
+    """Workspace boundary configuration for the robot
+
+    NOTE: These bounds MUST match the WORKSPACE constants in arm_controller.py
+    to ensure consistent safety validation across the system.
+    """
+    x_min: float = -0.50  # meters - matches arm_controller WORKSPACE['x'][0]
+    x_max: float = 0.50   # meters - matches arm_controller WORKSPACE['x'][1]
+    y_min: float = -0.50  # meters - matches arm_controller WORKSPACE['y'][0]
+    y_max: float = 0.50   # meters - matches arm_controller WORKSPACE['y'][1]
+    z_min: float = 0.10   # meters - matches arm_controller WORKSPACE['z'][0] - STAY ABOVE TABLE
+    z_max: float = 0.60   # meters - matches arm_controller WORKSPACE['z'][1]
     
     @classmethod
     def from_env(cls):
