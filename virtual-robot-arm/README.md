@@ -12,12 +12,15 @@ npm install --legacy-peer-deps
 cp .env.example .env
 # Edit .env: REACT_APP_GEMINI_API_KEY=your-key-here
 
-# 3. Start application
-npm start
+# 3. Start application on port 3002 (avoids conflict with real robot)
+PORT=3002 npm start
+# Or use: ./start.sh
 
 # 4. Open browser
-# http://localhost:3000
+# http://localhost:3002
 ```
+
+**Note:** Virtual robot runs on port **3002** to avoid conflicts with the real robot (port 3000).
 
 ## What's This?
 

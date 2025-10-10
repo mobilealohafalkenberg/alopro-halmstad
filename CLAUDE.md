@@ -407,8 +407,56 @@ source ~/interbotix_ws/install/setup.bash
 ```
 
 **Port Usage:**
-- 3000: React development server
-- 8081: Python bridge HTTP server
+- 3000: React development server (live-api-console)
+- 8081: Python bridge HTTP server (bridge_aloha_real.py)
+
+## Real Robot: Port Configuration and Conflicts
+
+**⚠️ IMPORTANT: Avoiding Port Conflicts**
+
+When running both real and virtual robot systems, port conflicts can occur. Follow these guidelines:
+
+**Real Robot Ports:**
+- `3000`: React UI (live-api-console)
+- `8081`: Python bridge (bridge_aloha_real.py)
+
+**Virtual Robot Ports:**
+- `3002`: React UI (use `PORT=3002 npm start` - **REQUIRED to avoid conflict**)
+- `5000/5001`: Optional MuJoCo physics server (not needed for basic use)
+
+**Running Both Systems Simultaneously:**
+
+✅ **SAFE - No conflicts:**
+```bash
+# Terminal 1: Real Robot Bridge
+cd gemini-live/gemini-live-api-control
+./run_bridge.sh  # Runs on port 8081
+
+# Terminal 2: Real Robot UI
+cd gemini-live/gemini-live-api-control/live-api-console
+npm start  # Runs on port 3000
+
+# Terminal 3: Virtual Robot (DIFFERENT PORT!)
+cd virtual-robot-arm
+PORT=3002 npm start  # Runs on port 3002 ✅
+```
+
+**Access URLs:**
+- Real robot: `http://localhost:3000`
+- Virtual robot: `http://localhost:3002`
+- Bridge API: `http://localhost:8081`
+
+❌ **WILL FAIL - Port conflict:**
+```bash
+# DON'T DO THIS - Both trying to use port 3000
+cd gemini-live/gemini-live-api-control/live-api-console
+npm start  # Port 3000
+
+cd virtual-robot-arm
+npm start  # Also tries port 3000 - FAILS with EADDRINUSE
+```
+
+**Solution:** Always start virtual robot with `PORT=3002 npm start` or update `start.sh` script.
 
 ## Real Robot: Hardware Specifications
 

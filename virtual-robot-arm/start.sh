@@ -21,8 +21,9 @@ if [ ! -d node_modules ]; then
     echo ""
 fi
 
-echo "🚀 Starting development server..."
-echo "   The app will open at http://localhost:3000"
+echo "🚀 Starting development server on port 3002..."
+echo "   (Port 3002 avoids conflicts with real robot on port 3000)"
+echo "   The app will open at http://localhost:3002"
 echo ""
 echo "Controls:"
 echo "  1. Click 'Connect to Gemini'"
@@ -30,4 +31,4 @@ echo "  2. Click 'Start Voice Control' to use your microphone"
 echo "  3. Try saying: 'Move to home position' or 'Pick up the green apple'"
 echo ""
 
-npm start
+PORT=3002 npm start
