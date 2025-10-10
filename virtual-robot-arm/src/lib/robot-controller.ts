@@ -40,8 +40,8 @@ export class RobotController {
       joints: getNamedPose('ready'),
       endEffectorPosition: { x: 0, y: 0, z: 0.5 },
       gripperState: {
-        position: 1.0, // fully open
-        state: 'open',
+        position: 0.0, // fully closed (matches MJCF base positions)
+        state: 'closed',
       },
       status: 'idle',
       currentPose: 'ready',
@@ -68,6 +68,10 @@ export class RobotController {
         this.animationProgress = 0;
         this.state.status = 'idle';
         stateChanged = true;
+
+        // Log final position
+        this.updateEndEffectorPosition();
+        console.log(`[RobotController] ✓ Movement complete - EE position: x=${this.state.endEffectorPosition.x.toFixed(3)}, y=${this.state.endEffectorPosition.y.toFixed(3)}, z=${this.state.endEffectorPosition.z.toFixed(3)}`);
       } else {
         // Interpolate
         const startJoints = this.state.joints;
@@ -88,13 +92,20 @@ export class RobotController {
       const step = Math.sign(diff) * this.gripperAnimationSpeed * deltaTime;
 
       if (Math.abs(diff) < Math.abs(step)) {
-        this.state.gripperState.position = this.targetGripperPosition;
-        this.state.gripperState.state = this.targetGripperPosition > 0.5 ? 'open' : 'closed';
+        // Create new gripperState object (don't mutate)
+        this.state.gripperState = {
+          position: this.targetGripperPosition,
+          state: this.targetGripperPosition > 0.5 ? 'open' : 'closed',
+        };
         this.targetGripperPosition = null;
         stateChanged = true;
+        console.log(`[RobotController] ✓ Gripper action complete - state: ${this.state.gripperState.state}, position: ${(this.state.gripperState.position * 100).toFixed(0)}%`);
       } else {
-        this.state.gripperState.position += step;
-        this.state.gripperState.state = step > 0 ? 'opening' : 'closing';
+        // Create new gripperState object (don't mutate)
+        this.state.gripperState = {
+          position: this.state.gripperState.position + step,
+          state: step > 0 ? 'opening' : 'closing',
+        };
         stateChanged = true;
       }
     }
@@ -190,6 +201,7 @@ export class RobotController {
       const normalized = normalizeAngles(anglesRad);
       const joints = clampJoints(arrayToJoints(normalized));
 
+      console.log(`[RobotController] → Moving to joint angles:`, angles);
       this.startJointAnimation(joints, duration);
       this.state.currentPose = undefined;
       return true;
@@ -205,10 +217,12 @@ export class RobotController {
   moveToPosition(position: number[] | Position3D, duration: number = 1.5): boolean {
     try {
       const parsedPos = this.parsePosition(position);
+      console.log(`[RobotController] → Moving to XYZ position: x=${parsedPos.x.toFixed(3)}, y=${parsedPos.y.toFixed(3)}, z=${parsedPos.z.toFixed(3)}`);
+
       const joints = inverseKinematics(parsedPos, this.state.joints);
 
       if (!joints) {
-        console.error('[RobotController] Cannot reach target position:', parsedPos);
+        console.error('[RobotController] ❌ Cannot reach target position:', parsedPos);
         return false;
       }
 
@@ -300,6 +314,7 @@ export class RobotController {
    * Open gripper
    */
   openGripper(): boolean {
+    console.log(`[RobotController] openGripper() called - current: ${this.state.gripperState.position.toFixed(2)}, target: 1.0`);
     this.targetGripperPosition = 1.0;
     return true;
   }
@@ -308,6 +323,7 @@ export class RobotController {
    * Close gripper
    */
   closeGripper(): boolean {
+    console.log(`[RobotController] closeGripper() called - current: ${this.state.gripperState.position.toFixed(2)}, target: 0.0`);
     this.targetGripperPosition = 0.0;
     return true;
   }

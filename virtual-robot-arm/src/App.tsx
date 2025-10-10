@@ -1,18 +1,20 @@
 /**
  * Virtual Robot Arm Application
  *
- * Server-side MuJoCo simulation with React control interface.
- * The MuJoCo physics server runs on localhost:5000 (Python/Flask-SocketIO).
- * This React app provides a web UI to control the dual-arm ALOHA robot.
+ * Integrated voice control + 3D visualization + MuJoCo simulation.
+ * - Voice control via Gemini Live API
+ * - 3D robot arm visualization with Three.js
+ * - Simulation bridge on port 8082
+ * - MuJoCo physics server on port 5000
  */
 
-import { SimulationControls } from './components/SimulationControls';
+import { IntegratedRobotControl } from './components/IntegratedRobotControl';
 import './App.css';
 
 function App() {
   return (
     <div className="App">
-      <SimulationControls />
+      <IntegratedRobotControl />
     </div>
   );
 }

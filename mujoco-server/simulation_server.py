@@ -28,7 +28,7 @@ from bridge_unified import UnifiedRobotBridge
 # Initialize Flask app
 app = Flask(__name__, static_folder='static', template_folder='static')
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=60, ping_interval=25)
+socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=60, ping_interval=25, async_mode='threading')
 
 # Global bridge instance
 bridge = None
