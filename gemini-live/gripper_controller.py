@@ -37,14 +37,19 @@ class GripperState(Enum):
 class GripperController:
     """
     Main API class for controlling the Mobile ALOHA gripper.
-    
-    Usage:
-        controller = GripperController()
+
+    Usage (Recommended):
+        controller = GripperController(robot_model='vx300s', robot_name='follower_left')
         controller.initialize()
         controller.open_gripper()
         state = controller.get_gripper_state()
         controller.close_gripper()
         controller.shutdown()
+
+    Note:
+        The global singleton functions (get_controller(), open_gripper(), close_gripper(),
+        get_gripper_state(), cleanup()) are deprecated and will be removed in a future version.
+        Always create explicit controller instances for better testability and resource management.
     """
     
     def __init__(self, robot_model='vx300s', robot_name='follower_left'):
@@ -334,7 +339,31 @@ class GripperController:
 _global_controller = None
 
 def get_controller() -> GripperController:
-    """Get or create global controller instance"""
+    """
+    Get or create global controller instance.
+
+    .. deprecated::
+        The global controller singleton pattern is deprecated and will be removed in a future version.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+
+    Returns:
+        GripperController: The global controller instance
+    """
+    import warnings
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in a future version. "
+        "Create controller instances explicitly: controller = GripperController(robot_model='vx300s', robot_name='follower_left'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller is None:
         _global_controller = GripperController()
@@ -342,19 +371,117 @@ def get_controller() -> GripperController:
     return _global_controller
 
 def open_gripper() -> Dict:
-    """Simple function to open gripper"""
+    """
+    Simple function to open gripper using global controller.
+
+    .. deprecated::
+        The global controller singleton pattern is deprecated and will be removed in a future version.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            open_gripper()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            controller.open_gripper()
+
+    Returns:
+        Dict: Gripper state after opening
+    """
+    import warnings
+    warnings.warn(
+        "open_gripper() is deprecated and will be removed in a future version. "
+        "Create controller instances explicitly and call open_gripper() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().open_gripper()
 
 def close_gripper() -> Dict:
-    """Simple function to close gripper"""
+    """
+    Simple function to close gripper using global controller.
+
+    .. deprecated::
+        The global controller singleton pattern is deprecated and will be removed in a future version.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            close_gripper()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            controller.close_gripper()
+
+    Returns:
+        Dict: Gripper state after closing
+    """
+    import warnings
+    warnings.warn(
+        "close_gripper() is deprecated and will be removed in a future version. "
+        "Create controller instances explicitly and call close_gripper() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().close_gripper()
 
 def get_gripper_state() -> Dict:
-    """Simple function to get gripper state"""
+    """
+    Simple function to get gripper state from global controller.
+
+    .. deprecated::
+        The global controller singleton pattern is deprecated and will be removed in a future version.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            state = get_gripper_state()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            state = controller.get_gripper_state()
+
+    Returns:
+        Dict: Current gripper state
+    """
+    import warnings
+    warnings.warn(
+        "get_gripper_state() is deprecated and will be removed in a future version. "
+        "Create controller instances explicitly and call get_gripper_state() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().get_gripper_state()
 
 def cleanup():
-    """Cleanup global controller"""
+    """
+    Cleanup global controller.
+
+    .. deprecated::
+        The global controller singleton pattern is deprecated and will be removed in a future version.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            cleanup()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            # ... use controller ...
+            controller.shutdown()
+    """
+    import warnings
+    warnings.warn(
+        "cleanup() is deprecated and will be removed in a future version. "
+        "Create controller instances explicitly and call shutdown() method directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller:
         _global_controller.shutdown()

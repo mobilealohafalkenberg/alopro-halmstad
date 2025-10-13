@@ -47,6 +47,140 @@ Each entry should follow this structure:
 
 ---
 
+## 2025-10-13
+
+### Phase 2 - Gripper Controller
+
+### Task 2.8: Deprecate Global Controller Singleton Pattern
+
+**Date**: 2025-10-13
+**Phase**: 2 (Gripper Controller)
+**Task ID**: 2.8
+**Task Name**: Deprecate Global Controller Singleton Pattern
+**Test File**: test/test_deprecation/test_deprecation_simple.py
+**Author**: celvin
+**Branch**: `feature/2-8-deprecate-singleton`
+
+#### Summary
+Deprecated the global controller singleton pattern in `gripper_controller.py` (lines 333-483) which used module-level functions `get_controller()`, `open_gripper()`, `close_gripper()`, `get_gripper_state()`, and `cleanup()`. This pattern matched the one previously deprecated in `arm_controller.py` (Task 1.9). All singleton functions now emit deprecation warnings and users are guided to manage controller instances explicitly for better testability and resource management.
+
+#### Changes Made
+1. **Added Deprecation Warnings to All 5 Singleton Functions**:
+   - `get_controller()`: Warns users to create explicit GripperController instances
+   - `open_gripper()`: Warns to use controller.open_gripper()
+   - `close_gripper()`: Warns to use controller.close_gripper()
+   - `get_gripper_state()`: Warns to use controller.get_gripper_state()
+   - `cleanup()`: Warns to use controller.shutdown()
+
+2. **Enhanced Documentation**:
+   - Updated class docstring with deprecation notice
+   - Added detailed docstrings with deprecation notices to all singleton functions
+   - Included migration examples in each function's documentation
+   - Specified removal in future version
+
+3. **Created Comprehensive Migration Guide**:
+   - Complete migration guide at `docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md`
+   - Before/after examples for all affected functions
+   - Common migration patterns (simple scripts, class-based usage, integration with arm controller)
+   - Advanced pattern for shared robot interface
+   - Testing guidelines with mock examples
+
+#### Technical Details
+
+**Deprecation Warning Implementation:**
+```python
+def get_controller() -> GripperController:
+    """
+    Get or create global controller instance.
+
+    .. deprecated::
+        The global controller singleton pattern is deprecated and will be removed in a future version.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+    """
+    import warnings
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in a future version. "
+        "Create controller instances explicitly: controller = GripperController(robot_model='vx300s', robot_name='follower_left'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    # ... existing implementation ...
+```
+
+**Migration Example:**
+```python
+# Before (deprecated):
+from gripper_controller import get_controller, open_gripper, close_gripper
+controller = get_controller()
+open_gripper()
+close_gripper()
+
+# After (recommended):
+from gripper_controller import GripperController
+controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+controller.initialize()
+controller.open_gripper()
+controller.close_gripper()
+controller.shutdown()
+```
+
+#### Impact
+- **Consistency with Arm Controller**: Matches deprecation pattern from Task 1.9
+- **Architecture Improvement**: Eliminates anti-pattern of hidden global state
+- **Better Testability**: Enables proper mocking and isolation in unit tests
+- **Clear Ownership**: Makes controller lifecycle management explicit and trackable
+- **Thread Safety**: Reduces risks from shared global state in concurrent operations
+- **Backward Compatible**: All existing code continues to work (with warnings)
+- **Future Breaking Change**: Users must migrate before removal in future version
+
+#### Files Modified
+- `gemini-live/gripper_controller.py`:
+  - Lines 37-53: Updated class docstring with deprecation notice
+  - Lines 336-483: Added deprecation warnings to all 5 singleton functions
+- `docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md` (new file: comprehensive migration guide)
+- `gemini-live/test/test_deprecation/test_deprecation_simple.py` (new file: AST-based deprecation check)
+- `gemini-live/test/test_deprecation/test_deprecation_warnings.py` (new file: runtime deprecation test, requires hardware)
+
+#### Verification
+
+**Check Deprecation Implementation:**
+```bash
+cd gemini-live/test/test_deprecation
+python3 test_deprecation_simple.py
+```
+
+Expected output: All 5 functions have deprecation warnings properly implemented
+
+**Verify Warnings (Lines):**
+```bash
+grep -n "warnings.warn" gripper_controller.py
+```
+
+Expected: Lines 361, 394, 423, 452, 479 (5 warnings total)
+
+#### Testing Recommendations
+1. Enable deprecation warnings: `warnings.simplefilter('always', DeprecationWarning)`
+2. Run existing tests to identify all usage of deprecated functions
+3. Update tests to use explicit controller instances
+4. Verify no deprecation warnings after migration
+5. Test with dry-run mode for hardware-independent validation (when available)
+
+#### Migration Resources
+- **Migration Guide**: `docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md`
+- **Deprecation Warnings**: Clear error messages with specific guidance
+- **Examples**: Before/after code samples in docstrings and migration guide
+- **Pattern Reference**: Follows same approach as `arm_controller.py` Task 1.9
+
+---
+
 ## 2025-10-08
 
 ### Phase 2 - Gripper Controller
