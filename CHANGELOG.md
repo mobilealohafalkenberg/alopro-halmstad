@@ -136,6 +136,150 @@ All tests passed successfully.
 
 ---
 
+### Task 2.3: Deprecate Global Controller Singleton Pattern
+
+**Date**: 2025-10-15
+**Phase**: 2 (Gripper Controller)
+**Task ID**: 2.3
+**Task Name**: Deprecate Global Controller Singleton Pattern
+**Migration Guide**: docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md
+**Author**: fasna
+**Branch**: `fix/2.1-2.2-gripper-monitor-safety_fas`
+
+#### Summary
+Deprecated the global controller singleton pattern in `gripper_controller.py` (lines 326-460) to improve code quality, testability, and consistency with `arm_controller.py` (Task 1.9). Added deprecation warnings to all 5 singleton functions guiding users toward explicit controller instance management. Pattern will be completely removed in v2.0.
+
+#### Problem Identified
+The gripper controller used the same anti-pattern as arm_controller.py had before Task 1.9:
+- Module-level global variable `_global_controller`
+- Convenience functions (`get_controller()`, `open_gripper()`, `close_gripper()`, `get_gripper_state()`, `cleanup()`)
+- Hidden global state made testing difficult
+- Prevented managing multiple gripper instances
+- Inconsistent with arm_controller.py best practices
+
+#### Solution Implemented
+1. **Added `warnings` import** (Line 10)
+2. **Added deprecation warnings to all 5 functions**:
+   - `get_controller()` - Lines 346-351: Warns to create explicit instances
+   - `open_gripper()` - Lines 375-380: Warns to use `controller.open_gripper()`
+   - `close_gripper()` - Lines 400-405: Warns to use `controller.close_gripper()`
+   - `get_gripper_state()` - Lines 425-430: Warns to use `controller.get_gripper_state()`
+   - `cleanup()` - Lines 451-456: Warns to use `controller.shutdown()`
+3. **Enhanced documentation** with migration examples in each function's docstring
+4. **Created comprehensive migration guide** at `docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md`
+
+#### Code Changes
+
+**Import Addition:**
+```python
+# Line 10
+import warnings
+```
+
+**Deprecation Warning Pattern (Applied to All 5 Functions):**
+```python
+def get_controller() -> GripperController:
+    """
+    Get or create global controller instance.
+
+    .. deprecated:: 2.3
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+    """
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly: controller = GripperController(robot_model='vx300s', robot_name='follower_left'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    global _global_controller
+    if _global_controller is None:
+        _global_controller = GripperController()
+        _global_controller.initialize()
+    return _global_controller
+```
+
+#### Migration Example
+
+**Before (Deprecated):**
+```python
+from gripper_controller import get_controller, open_gripper, close_gripper
+
+controller = get_controller()  # Hidden global
+open_gripper()   # Uses hidden global
+close_gripper()  # Uses hidden global
+```
+
+**After (Recommended):**
+```python
+from gripper_controller import GripperController
+
+controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+controller.initialize()
+controller.open_gripper()
+controller.close_gripper()
+controller.shutdown()
+```
+
+#### Impact
+- **Architecture Improvement**: Eliminates anti-pattern of hidden global state
+- **Better Testability**: Enables proper mocking and isolation in unit tests
+- **Multi-Gripper Support**: Can now manage multiple gripper instances simultaneously
+- **Consistency**: Matches arm_controller.py pattern from Task 1.9
+- **Clear Ownership**: Controller lifecycle management is now explicit
+- **Thread Safety**: Reduces risks from shared global state
+- **Backward Compatible**: All code works in v2.3 (with warnings)
+- **Breaking Change in v2.0**: Users must migrate before v2.0 release
+
+#### Files Modified
+- `gripper_controller.py`:
+  - Line 10: Added `warnings` import
+  - Lines 330-356: Enhanced `get_controller()` with deprecation warning
+  - Lines 358-381: Enhanced `open_gripper()` with deprecation warning
+  - Lines 383-406: Enhanced `close_gripper()` with deprecation warning
+  - Lines 408-431: Enhanced `get_gripper_state()` with deprecation warning
+  - Lines 433-460: Enhanced `cleanup()` with deprecation warning
+- `docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md` (new file)
+
+#### Migration Guide Highlights
+The comprehensive migration guide includes:
+- Before/after code examples for all patterns
+- Context manager pattern (best practice)
+- Class-based approach for robot tasks
+- Dependency injection examples
+- Multi-gripper control (new capability)
+- Common migration mistakes and how to avoid them
+- FAQ section
+- Timeline for deprecation and removal
+
+#### Testing Recommendations
+1. Enable deprecation warnings: `warnings.simplefilter('always', DeprecationWarning)`
+2. Run code and identify all deprecated function usage
+3. Update to explicit controller instances following migration guide
+4. Test with dry-run mode: `GripperController(dry_run=True)` (when Task 2.4 is complete)
+5. Verify no warnings after migration
+6. Test multiple gripper instances if controlling multiple grippers
+
+#### Migration Timeline
+- **v2.3 (Current)**: Deprecation warnings added, old functions still work
+- **User Migration Period**: Update code using migration guide
+- **v2.0 (Future)**: Complete removal of singleton functions
+
+#### Related Tasks
+- Follows same pattern as Task 1.9 (Arm Controller Singleton Removal)
+- Part of Phase 2 gripper controller modernization
+- Improves consistency across all controllers
+
+---
+
 ## 2025-10-07
 
 ### Phase 1 - Infrastructure & Testing

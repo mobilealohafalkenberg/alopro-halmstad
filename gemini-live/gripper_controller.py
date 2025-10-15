@@ -7,6 +7,7 @@ Designed to be called from external scripts (e.g., Gemini Live API integration)
 
 import time
 import threading
+import warnings
 from enum import Enum
 from typing import Dict, Optional, Tuple
 import logging
@@ -327,7 +328,27 @@ class GripperController:
 _global_controller = None
 
 def get_controller() -> GripperController:
-    """Get or create global controller instance"""
+    """
+    Get or create global controller instance.
+
+    .. deprecated:: 2.3
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+    """
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly: controller = GripperController(robot_model='vx300s', robot_name='follower_left'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller is None:
         _global_controller = GripperController()
@@ -335,19 +356,104 @@ def get_controller() -> GripperController:
     return _global_controller
 
 def open_gripper() -> Dict:
-    """Simple function to open gripper"""
+    """
+    Simple function to open gripper.
+
+    .. deprecated:: 2.3
+        This convenience function is deprecated and will be removed in version 2.0.
+        Use an explicit controller instance instead:
+
+        Example:
+            # Old (deprecated):
+            open_gripper()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            controller.open_gripper()
+    """
+    warnings.warn(
+        "open_gripper() is deprecated and will be removed in version 2.0. "
+        "Use controller.open_gripper() with an explicit GripperController instance.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().open_gripper()
 
 def close_gripper() -> Dict:
-    """Simple function to close gripper"""
+    """
+    Simple function to close gripper.
+
+    .. deprecated:: 2.3
+        This convenience function is deprecated and will be removed in version 2.0.
+        Use an explicit controller instance instead:
+
+        Example:
+            # Old (deprecated):
+            close_gripper()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            controller.close_gripper()
+    """
+    warnings.warn(
+        "close_gripper() is deprecated and will be removed in version 2.0. "
+        "Use controller.close_gripper() with an explicit GripperController instance.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().close_gripper()
 
 def get_gripper_state() -> Dict:
-    """Simple function to get gripper state"""
+    """
+    Simple function to get gripper state.
+
+    .. deprecated:: 2.3
+        This convenience function is deprecated and will be removed in version 2.0.
+        Use an explicit controller instance instead:
+
+        Example:
+            # Old (deprecated):
+            state = get_gripper_state()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            state = controller.get_gripper_state()
+    """
+    warnings.warn(
+        "get_gripper_state() is deprecated and will be removed in version 2.0. "
+        "Use controller.get_gripper_state() with an explicit GripperController instance.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return get_controller().get_gripper_state()
 
 def cleanup():
-    """Cleanup global controller"""
+    """
+    Cleanup global controller.
+
+    .. deprecated:: 2.3
+        This cleanup function is deprecated and will be removed in version 2.0.
+        Manage controller lifecycle explicitly instead:
+
+        Example:
+            # Old (deprecated):
+            cleanup()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+            # ... use controller ...
+            controller.shutdown()
+    """
+    warnings.warn(
+        "cleanup() is deprecated and will be removed in version 2.0. "
+        "Use controller.shutdown() with an explicit GripperController instance.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     global _global_controller
     if _global_controller:
         _global_controller.shutdown()
