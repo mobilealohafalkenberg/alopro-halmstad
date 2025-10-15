@@ -48,10 +48,11 @@ class GripperController:
         controller.shutdown()
     """
     
-    def __init__(self, robot_model='vx300s', robot_name='follower_left'):
+    def __init__(self, robot_model='vx300s', robot_name='follower_left', dry_run=False):
         """Initialize controller (does not connect to robot yet)"""
         self.robot_model = robot_model
         self.robot_name = robot_name
+        self.dry_run = dry_run
         self.bot = None
         self.node = None
         self.initialized = False
@@ -69,6 +70,15 @@ class GripperController:
         Initialize robot connection and move to starting position.
         Returns True if successful, False otherwise.
         """
+        # Dry-run mode: Skip hardware initialization
+        if self.dry_run:
+            print("[GripperController] 🔧 DRY-RUN MODE: Skipping hardware initialization")
+            self.initialized = True
+            self.current_state = GripperState.CLOSED
+            self.gripper_position = FOLLOWER_GRIPPER_JOINT_CLOSE
+            print("[GripperController] ✓ Dry-run initialization complete")
+            return True
+
         try:
             print("[GripperController] Initializing robot connection...")
             
@@ -117,6 +127,11 @@ class GripperController:
     
     def _start_position_monitor(self):
         """Start background thread to monitor gripper position"""
+        # Dry-run mode: Skip monitoring thread (position is set manually)
+        if self.dry_run:
+            print("[GripperController] 🔧 DRY-RUN: Skipping position monitor thread")
+            return
+
         def monitor():
             while self.initialized:
                 try:
@@ -171,15 +186,26 @@ class GripperController:
         
         with self.state_lock:
             self.current_state = GripperState.OPENING
-        
+
         print("[GripperController] Opening gripper...")
-        move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_OPEN], moving_time=1.0)
-        
-        if blocking:
-            time.sleep(1.0)
-            with self.state_lock:
-                self.current_state = GripperState.OPEN
-        
+
+        # Dry-run mode: Simulate movement
+        if self.dry_run:
+            if blocking:
+                time.sleep(0.1)  # Simulate brief movement
+                with self.state_lock:
+                    self.gripper_position = FOLLOWER_GRIPPER_JOINT_OPEN
+                    self.current_state = GripperState.OPEN
+            print("[GripperController] 🔧 DRY-RUN: Simulated gripper open")
+        else:
+            # Hardware mode: Execute real movement
+            move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_OPEN], moving_time=1.0)
+
+            if blocking:
+                time.sleep(1.0)
+                with self.state_lock:
+                    self.current_state = GripperState.OPEN
+
         return self.get_gripper_state()
     
     def close_gripper(self, blocking: bool = True) -> Dict:
@@ -197,15 +223,26 @@ class GripperController:
         
         with self.state_lock:
             self.current_state = GripperState.CLOSING
-        
+
         print("[GripperController] Closing gripper...")
-        move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_CLOSE], moving_time=1.0)
-        
-        if blocking:
-            time.sleep(1.0)
-            with self.state_lock:
-                self.current_state = GripperState.CLOSED
-        
+
+        # Dry-run mode: Simulate movement
+        if self.dry_run:
+            if blocking:
+                time.sleep(0.1)  # Simulate brief movement
+                with self.state_lock:
+                    self.gripper_position = FOLLOWER_GRIPPER_JOINT_CLOSE
+                    self.current_state = GripperState.CLOSED
+            print("[GripperController] 🔧 DRY-RUN: Simulated gripper close")
+        else:
+            # Hardware mode: Execute real movement
+            move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_CLOSE], moving_time=1.0)
+
+            if blocking:
+                time.sleep(1.0)
+                with self.state_lock:
+                    self.current_state = GripperState.CLOSED
+
         return self.get_gripper_state()
     
     def get_gripper_state(self) -> Dict:
@@ -266,15 +303,32 @@ class GripperController:
             actual_position = position
         
         # Clamp to valid range
-        actual_position = max(FOLLOWER_GRIPPER_JOINT_CLOSE, 
+        actual_position = max(FOLLOWER_GRIPPER_JOINT_CLOSE,
                              min(FOLLOWER_GRIPPER_JOINT_OPEN, actual_position))
-        
+
         print(f"[GripperController] Setting gripper to position: {actual_position:.3f}")
-        move_grippers([self.bot], [actual_position], moving_time=1.0)
-        
-        if blocking:
-            time.sleep(1.0)
-        
+
+        # Dry-run mode: Simulate movement
+        if self.dry_run:
+            if blocking:
+                time.sleep(0.1)  # Simulate brief movement
+                with self.state_lock:
+                    self.gripper_position = actual_position
+                    # Update state based on position
+                    if actual_position >= self.OPEN_THRESHOLD:
+                        self.current_state = GripperState.OPEN
+                    elif actual_position <= self.CLOSE_THRESHOLD:
+                        self.current_state = GripperState.CLOSED
+                    else:
+                        self.current_state = GripperState.UNKNOWN
+            print(f"[GripperController] 🔧 DRY-RUN: Simulated gripper position {actual_position:.3f}")
+        else:
+            # Hardware mode: Execute real movement
+            move_grippers([self.bot], [actual_position], moving_time=1.0)
+
+            if blocking:
+                time.sleep(1.0)
+
         return self.get_gripper_state()
     
     def sleep_arm(self) -> bool:
@@ -312,10 +366,13 @@ class GripperController:
         """
         print("[GripperController] Shutting down...")
         self.initialized = False
-        
-        if self.node:
+
+        # Dry-run mode: Skip hardware shutdown
+        if self.dry_run:
+            print("[GripperController] 🔧 DRY-RUN: Skipping hardware shutdown")
+        elif self.node:
             robot_shutdown(self.node)
-        
+
         print("[GripperController] ✓ Shutdown complete")
     
     def __del__(self):
