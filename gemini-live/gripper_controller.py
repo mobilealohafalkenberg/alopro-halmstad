@@ -32,6 +32,7 @@ class GripperState(Enum):
     OPENING = "opening"
     CLOSING = "closing"
     UNKNOWN = "unknown"
+    ERROR = "error"
 
 
 class GripperController:
@@ -161,16 +162,21 @@ class GripperController:
     def open_gripper(self, blocking: bool = True) -> Dict:
         """
         Open the gripper.
-        
+
         Args:
             blocking: If True, wait for movement to complete
-            
+
         Returns:
             Dictionary with status and gripper position
         """
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-        
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == GripperState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         with self.state_lock:
             self.current_state = GripperState.OPENING
         
@@ -187,16 +193,21 @@ class GripperController:
     def close_gripper(self, blocking: bool = True) -> Dict:
         """
         Close the gripper.
-        
+
         Args:
             blocking: If True, wait for movement to complete
-            
+
         Returns:
             Dictionary with status and gripper position
         """
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-        
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == GripperState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         with self.state_lock:
             self.current_state = GripperState.CLOSING
         
@@ -252,17 +263,22 @@ class GripperController:
     def set_gripper_position(self, position: float, blocking: bool = True) -> Dict:
         """
         Set gripper to a specific position.
-        
+
         Args:
             position: Position in radians or normalized (0.0 to 1.0)
             blocking: If True, wait for movement to complete
-            
+
         Returns:
             Dictionary with status and gripper position
         """
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-        
+
+        # Check if system is in ERROR state (e.g., after emergency stop)
+        with self.state_lock:
+            if self.current_state == GripperState.ERROR:
+                return {"success": False, "error": "System in ERROR state. Call resume_after_stop() to recover.", "state": "error"}
+
         # If position is between 0 and 1, treat as normalized
         if 0.0 <= position <= 1.0:
             # Convert normalized to actual position
@@ -280,9 +296,119 @@ class GripperController:
         
         if blocking:
             time.sleep(1.0)
-        
+
         return self.get_gripper_state()
-    
+
+    def emergency_stop(self) -> Dict:
+        """
+        Emergency stop - immediately disable torque on gripper and enter ERROR state.
+
+        After calling this method:
+        - Gripper torque is disabled
+        - System enters ERROR state
+        - All movement commands will be rejected
+        - Call resume_after_stop() to recover and resume operations
+
+        Returns:
+            Dict with success status and state
+        """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized"}
+
+        try:
+            print("[GripperController] ⚠️ EMERGENCY STOP ACTIVATED!")
+            self.bot.core.robot_torque_enable('single', 'gripper', False)
+            with self.state_lock:
+                self.current_state = GripperState.ERROR
+            print("[GripperController] System in ERROR state. Call resume_after_stop() to recover.")
+            return {"success": True, "state": "emergency_stopped"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def resume_after_stop(self) -> Dict:
+        """
+        Re-enable torque and resume operations after emergency stop.
+
+        This method performs recovery validation before resuming:
+        1. Verifies system is in ERROR state
+        2. Re-enables gripper torque
+        3. Captures current gripper position
+        4. Validates current position is safe
+        5. Clears ERROR state to allow movements
+
+        Returns:
+            Dict with success status, state, and validation details
+        """
+        if not self.initialized:
+            return {"success": False, "error": "Not initialized"}
+
+        # Check if we're actually in ERROR state
+        with self.state_lock:
+            if self.current_state != GripperState.ERROR:
+                return {
+                    "success": False,
+                    "error": f"Not in ERROR state. Current state: {self.current_state.value}",
+                    "state": self.current_state.value
+                }
+
+        try:
+            print("[GripperController] Resuming after emergency stop...")
+
+            # Re-enable torque
+            print("[GripperController] Re-enabling gripper torque")
+            self.bot.core.robot_torque_enable('single', 'gripper', True)
+
+            # Capture current position
+            print("[GripperController] Capturing current position")
+            time.sleep(0.1)  # Brief wait for torque to stabilize
+
+            with self.bot.core.js_mutex:
+                gripper_index = self.bot.gripper.left_finger_index
+                current_position = self.bot.core.joint_states.position[gripper_index]
+
+            # Validate current position is within safe range
+            if current_position < FOLLOWER_GRIPPER_JOINT_CLOSE or current_position > FOLLOWER_GRIPPER_JOINT_OPEN:
+                print(f"[GripperController] ⚠️ WARNING: Current position {current_position:.3f} outside safe range")
+                print(f"[GripperController] Safe range: [{FOLLOWER_GRIPPER_JOINT_CLOSE:.3f}, {FOLLOWER_GRIPPER_JOINT_OPEN:.3f}]")
+                # Still allow resume but warn user
+                with self.state_lock:
+                    self.current_state = GripperState.UNKNOWN
+                    self.gripper_position = current_position
+                return {
+                    "success": True,
+                    "state": "resumed_with_warnings",
+                    "warning": f"Position {current_position:.3f} outside normal range",
+                    "current_position": current_position,
+                    "recommendation": "Check gripper position and reset to safe state"
+                }
+
+            # Determine state based on position
+            if current_position >= self.OPEN_THRESHOLD:
+                new_state = GripperState.OPEN
+            elif current_position <= self.CLOSE_THRESHOLD:
+                new_state = GripperState.CLOSED
+            else:
+                new_state = GripperState.UNKNOWN
+
+            # All validations passed
+            with self.state_lock:
+                self.current_state = new_state
+                self.gripper_position = current_position
+
+            print("[GripperController] ✓ System resumed successfully")
+            return {
+                "success": True,
+                "state": "resumed",
+                "current_state": new_state.value,
+                "current_position": current_position,
+                "message": "System recovered from ERROR state"
+            }
+
+        except Exception as e:
+            print(f"[GripperController] ✗ Failed to resume: {e}")
+            # Keep ERROR state if resume fails
+            return {"success": False, "error": str(e), "state": "error"}
+
     def sleep_arm(self) -> bool:
         """
         Move arm to sleep position.
