@@ -47,6 +47,117 @@ Each entry should follow this structure:
 
 ---
 
+## 2025-10-16
+
+### Phase 2 - Gripper Controller Testing Infrastructure
+
+### Task 2.9: Add Dry-Run Mode for Hardware-Independent Testing
+
+**Date**: 2025-10-16
+**Phase**: 2 (Gripper Controller)
+**Task ID**: 2.9
+**Task Name**: Add Dry-Run Mode for Hardware-Independent Testing
+**Test File**: test_gripper/test_dry_run_mode.py
+**Author**: Claude Code
+**Branch**: `GC_test_branch`
+
+#### Summary
+Added comprehensive dry-run mode to GripperController, enabling hardware-independent testing and development. This matches the arm_controller.py infrastructure and provides safe testing capabilities without requiring robot hardware.
+
+#### Problem Addressed
+- GripperController lacked dry-run mode, making testing impossible without robot hardware
+- Development was blocked when hardware dependencies (aloha module) were unavailable
+- No safe way to validate gripper logic in CI/CD environments or development setups
+
+#### Solution Implemented
+**Dry-Run Mode Features:**
+- Hardware-independent initialization - skips ROS node creation and robot setup
+- Mock robot responses - simulates gripper movements with realistic state tracking
+- Graceful import handling - works even when robot dependencies are missing
+- Consistent API - same interface for both normal and dry-run modes
+- Performance optimized - fast execution for rapid testing
+
+#### Changes Made
+
+1. **gripper_controller.py**
+   - Added `dry_run` parameter to `__init__()` method
+   - Modified `initialize()` to skip hardware setup when `dry_run=True`
+   - Updated all movement methods (`open_gripper`, `close_gripper`, `set_gripper_position`, `sleep_arm`)
+   - Added graceful import handling for robot dependencies
+   - Enhanced class documentation with dry-run usage examples
+
+2. **test_gripper/test_dry_run_mode.py** (New File)
+   - Comprehensive test suite with 6 test scenarios
+   - Tests initialization, operations, state tracking, performance
+   - Validates dry-run vs normal mode behavior
+   - Documents dry-run mode benefits and usage
+
+3. **test_gripper/example_gemini_integration.py**
+   - Added `--dry-run` command line flag support
+   - Updated ROS environment checks to skip in dry-run mode
+   - Added helpful usage instructions for hardware-independent testing
+
+#### Key Features
+
+**Dry-Run Initialization:**
+```python
+controller = GripperController(dry_run=True)
+controller.initialize()  # Skips hardware setup, returns immediately
+```
+
+**Mock Operations:**
+```python
+result = controller.open_gripper()
+# Returns: {"success": True, "state": "dry_run", "message": "...", ...}
+```
+
+**Import Safety:**
+```python
+# Works even without robot dependencies
+from gripper_controller import GripperController  # No ImportError
+```
+
+#### Testing Results
+
+**All Tests Pass:**
+- ✅ Test 1: Dry-run initialization (fast, hardware-independent)
+- ✅ Test 2: Dry-run gripper operations (mock responses)
+- ✅ Test 3: State tracking (position and state updates)
+- ✅ Test 4: Arm operations (sleep_arm works in dry-run)
+- ✅ Test 5: Normal vs dry-run comparison
+- ✅ Test 6: Performance (complete cycle in <1s)
+
+**Usage Examples:**
+```bash
+# Hardware-independent testing
+python3 test_gripper/test_dry_run_mode.py
+
+# Example script with dry-run
+python3 test_gripper/example_gemini_integration.py --dry-run
+
+# Normal development usage
+controller = GripperController(dry_run=True)
+```
+
+#### Impact
+- **Critical Testing Infrastructure**: Enables all future gripper testing without hardware
+- **Development Efficiency**: Fast feedback loops during development
+- **CI/CD Ready**: Tests can run in any environment
+- **Safety**: No risk of hardware damage during testing
+- **Consistency**: Matches arm_controller.py dry-run pattern
+- **Documentation**: Clear usage examples for developers
+
+#### Files Modified
+- `gemini-live/gripper_controller.py` (lines 8-34: imports, 49-65: __init__, 94-110: initialize, 203-216: open_gripper, 244-257: close_gripper, 330-349: set_gripper_position, 367-372: shutdown)
+- `gemini-live/test/test_gripper/test_dry_run_mode.py` (new file, 248 lines)
+- `gemini-live/test/test_gripper/example_gemini_integration.py` (lines 7-8: header, 136-149: main, 207-231: environment check)
+
+#### Dependencies
+- **None** - this task enables testing for all following tasks
+- **Enables**: All future gripper controller tasks can now be tested safely
+
+---
+
 ## 2025-10-07
 
 ### Phase 1 - Infrastructure & Testing

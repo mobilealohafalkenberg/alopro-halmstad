@@ -3,6 +3,8 @@
 """
 Example of how to use the GripperController as a tool for Gemini Live API.
 This simulates how Gemini could call gripper functions and get feedback.
+
+Task 2.9: Updated to support dry-run mode for hardware-independent testing.
 """
 
 import time
@@ -130,12 +132,20 @@ def main():
     print("=" * 60)
     print("GEMINI LIVE API - GRIPPER CONTROL EXAMPLE")
     print("=" * 60)
-    
+
+    # Check for dry-run mode
+    dry_run = len(sys.argv) > 1 and sys.argv[1] == "--dry-run"
+    if dry_run:
+        print("🧪 RUNNING IN DRY-RUN MODE (Task 2.9)")
+        print("   No hardware required - all operations are simulated")
+
     # Initialize controller (this would be done once at startup)
     print("\n1. INITIALIZING GRIPPER CONTROLLER...")
-    controller = GripperController()
+    controller = GripperController(dry_run=dry_run)
     if not controller.initialize():
         print("Failed to initialize controller!")
+        if not dry_run:
+            print("💡 TIP: Try running with --dry-run flag for hardware-independent testing")
         return
     
     print("\n2. SIMULATING GEMINI COMMANDS...")
@@ -195,19 +205,27 @@ def main():
 
 
 if __name__ == '__main__':
-    # Ensure ROS environment is sourced
-    import sys
-    import subprocess
-    
-    # Check if ROS is sourced
-    try:
-        subprocess.run(['ros2', 'topic', 'list'], 
-                      capture_output=True, check=True, timeout=1)
-    except:
-        print("ERROR: ROS2 environment not sourced!")
-        print("Please run:")
-        print("  source /opt/ros/humble/setup.bash")
-        print("  source ~/interbotix_ws/install/setup.bash")
-        sys.exit(1)
-    
-    main()
+    # Check for dry-run mode first
+    dry_run = len(sys.argv) > 1 and sys.argv[1] == "--dry-run"
+
+    if dry_run:
+        print("Running in dry-run mode - skipping ROS environment check")
+        main()
+    else:
+        # Ensure ROS environment is sourced for hardware mode
+        import subprocess
+
+        # Check if ROS is sourced
+        try:
+            subprocess.run(['ros2', 'topic', 'list'],
+                          capture_output=True, check=True, timeout=1)
+        except:
+            print("ERROR: ROS2 environment not sourced!")
+            print("Please run:")
+            print("  source /opt/ros/humble/setup.bash")
+            print("  source ~/interbotix_ws/install/setup.bash")
+            print("\nOR use dry-run mode for testing without hardware:")
+            print("  python3 example_gemini_integration.py --dry-run")
+            sys.exit(1)
+
+        main()
