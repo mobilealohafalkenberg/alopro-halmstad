@@ -8,7 +8,8 @@ Designed to be called from external scripts (e.g., Gemini Live API integration)
 import time
 import threading
 from enum import Enum
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
+import warnings
 
 # Try to import robot dependencies, but allow dry-run mode without them
 try:
@@ -90,6 +91,103 @@ class GripperController:
         # Gripper position thresholds
         self.OPEN_THRESHOLD = FOLLOWER_GRIPPER_JOINT_OPEN - 0.1
         self.CLOSE_THRESHOLD = FOLLOWER_GRIPPER_JOINT_CLOSE + 0.1
+
+    def _validate_blocking_parameter(self, blocking) -> bool:
+        """
+        Validate the blocking parameter.
+
+        Args:
+            blocking: Parameter to validate
+
+        Returns:
+            bool: Validated blocking value
+
+        Raises:
+            TypeError: If blocking is not a boolean
+        """
+        if not isinstance(blocking, bool):
+            raise TypeError(
+                f"Parameter 'blocking' must be a boolean, got {type(blocking).__name__}: {blocking}. "
+                "Use True to wait for movement completion, False for non-blocking operation."
+            )
+        return blocking
+
+    def _validate_position_parameter(self, position) -> float:
+        """
+        Validate and convert position parameter.
+
+        Args:
+            position: Position value to validate
+
+        Returns:
+            float: Validated position value
+
+        Raises:
+            TypeError: If position is not numeric
+            ValueError: If position is invalid (NaN, infinity)
+        """
+        # Type validation - exclude bool even though bool is a subclass of int
+        if isinstance(position, bool) or not isinstance(position, (int, float)):
+            raise TypeError(
+                f"Parameter 'position' must be numeric (int or float), got {type(position).__name__}: {position}. "
+                "Valid range: 0.0-1.0 (normalized) or -0.37 to 1.4 radians (absolute)."
+            )
+
+        # Convert to float
+        position = float(position)
+
+        # Check for invalid values
+        if not (position == position):  # NaN check
+            raise ValueError(
+                "Parameter 'position' cannot be NaN. "
+                "Valid range: 0.0-1.0 (normalized) or -0.37 to 1.4 radians (absolute)."
+            )
+
+        if position == float('inf') or position == float('-inf'):
+            raise ValueError(
+                "Parameter 'position' cannot be infinity. "
+                "Valid range: 0.0-1.0 (normalized) or -0.37 to 1.4 radians (absolute)."
+            )
+
+        return position
+
+    def _validate_and_convert_position(self, position: Union[int, float]) -> Tuple[float, bool]:
+        """
+        Validate, convert and clamp position to valid range with warnings.
+
+        Args:
+            position: Position value (normalized 0-1 or absolute radians)
+
+        Returns:
+            Tuple[float, bool]: (validated_position, was_clamped)
+        """
+        # Basic validation first
+        position = self._validate_position_parameter(position)
+
+        was_clamped = False
+        original_position = position
+
+        # If position is between 0 and 1, treat as normalized
+        if 0.0 <= position <= 1.0:
+            # Convert normalized to actual position
+            pos_range = FOLLOWER_GRIPPER_JOINT_OPEN - FOLLOWER_GRIPPER_JOINT_CLOSE
+            actual_position = FOLLOWER_GRIPPER_JOINT_CLOSE + (position * pos_range)
+        else:
+            actual_position = position
+
+        # Clamp to valid range and warn if needed
+        if actual_position < FOLLOWER_GRIPPER_JOINT_CLOSE:
+            print(f"[GripperController] WARNING: Position {original_position:.3f} below minimum. "
+                  f"Clamping to {FOLLOWER_GRIPPER_JOINT_CLOSE:.3f} (closed position).")
+            actual_position = FOLLOWER_GRIPPER_JOINT_CLOSE
+            was_clamped = True
+        elif actual_position > FOLLOWER_GRIPPER_JOINT_OPEN:
+            print(f"[GripperController] WARNING: Position {original_position:.3f} above maximum. "
+                  f"Clamping to {FOLLOWER_GRIPPER_JOINT_OPEN:.3f} (open position).")
+            actual_position = FOLLOWER_GRIPPER_JOINT_OPEN
+            was_clamped = True
+
+        return actual_position, was_clamped
         
     def initialize(self) -> bool:
         """
@@ -193,7 +291,16 @@ class GripperController:
 
         Returns:
             Dictionary with status and gripper position
+
+        Raises:
+            TypeError: If blocking is not a boolean
         """
+        # Parameter validation (Task 2.10)
+        try:
+            blocking = self._validate_blocking_parameter(blocking)
+        except (TypeError, ValueError) as e:
+            return {"success": False, "error": f"Parameter validation failed: {str(e)}", "state": "unknown"}
+
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
 
@@ -234,7 +341,16 @@ class GripperController:
 
         Returns:
             Dictionary with status and gripper position
+
+        Raises:
+            TypeError: If blocking is not a boolean
         """
+        # Parameter validation (Task 2.10)
+        try:
+            blocking = self._validate_blocking_parameter(blocking)
+        except (TypeError, ValueError) as e:
+            return {"success": False, "error": f"Parameter validation failed: {str(e)}", "state": "unknown"}
+
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
 
@@ -301,7 +417,7 @@ class GripperController:
                 "position_closed": FOLLOWER_GRIPPER_JOINT_CLOSE
             }
     
-    def set_gripper_position(self, position: float, blocking: bool = True) -> Dict:
+    def set_gripper_position(self, position: Union[int, float], blocking: bool = True) -> Dict:
         """
         Set gripper to a specific position.
 
@@ -311,21 +427,20 @@ class GripperController:
 
         Returns:
             Dictionary with status and gripper position
+
+        Raises:
+            TypeError: If position is not numeric or blocking is not a boolean
+            ValueError: If position is NaN or infinity
         """
+        # Parameter validation (Task 2.10) - validate position first for consistent error reporting
+        try:
+            actual_position, was_clamped = self._validate_and_convert_position(position)
+            blocking = self._validate_blocking_parameter(blocking)
+        except (TypeError, ValueError) as e:
+            return {"success": False, "error": f"Parameter validation failed: {str(e)}", "state": "unknown"}
+
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-
-        # If position is between 0 and 1, treat as normalized
-        if 0.0 <= position <= 1.0:
-            # Convert normalized to actual position
-            pos_range = FOLLOWER_GRIPPER_JOINT_OPEN - FOLLOWER_GRIPPER_JOINT_CLOSE
-            actual_position = FOLLOWER_GRIPPER_JOINT_CLOSE + (position * pos_range)
-        else:
-            actual_position = position
-
-        # Clamp to valid range
-        actual_position = max(FOLLOWER_GRIPPER_JOINT_CLOSE,
-                             min(FOLLOWER_GRIPPER_JOINT_OPEN, actual_position))
 
         if self.dry_run:
             print(f"[GripperController] DRY RUN: Would set gripper to position: {actual_position:.3f}")
@@ -342,9 +457,13 @@ class GripperController:
                         self.current_state = GripperState.UNKNOWN
 
             gripper_state = self.get_gripper_state()
+            message = f"Dry run - gripper position {actual_position:.3f} validated but not executed"
+            if was_clamped:
+                message += " (value was clamped to valid range)"
             gripper_state.update({
                 "state": "dry_run",
-                "message": f"Dry run - gripper position {actual_position:.3f} validated but not executed"
+                "message": message,
+                "clamped": was_clamped
             })
             return gripper_state
 
@@ -354,7 +473,11 @@ class GripperController:
         if blocking:
             time.sleep(1.0)
 
-        return self.get_gripper_state()
+        result = self.get_gripper_state()
+        if was_clamped:
+            result["clamped"] = True
+            result["message"] = f"Position set to {actual_position:.3f} (value was clamped to valid range)"
+        return result
     
     def sleep_arm(self) -> bool:
         """
