@@ -36,13 +36,24 @@ class GripperState(Enum):
 class GripperController:
     """
     Main API class for controlling the Mobile ALOHA gripper.
-    
+
+    Features:
+    - Thread-safe gripper control with position monitoring
+    - Timeout protection to prevent system hangs (Task 2.4)
+    - Current-based position control (300mA limit)
+    - State tracking (open/closed/opening/closing/unknown)
+
     Usage:
         controller = GripperController()
         controller.initialize()
-        controller.open_gripper()
+
+        # With timeout protection (default 5.0s)
+        result = controller.open_gripper(blocking=True, timeout=5.0)
+        if not result["success"]:
+            print(f"Operation failed: {result['error']}")
+
         state = controller.get_gripper_state()
-        controller.close_gripper()
+        controller.close_gripper(timeout=3.0)  # Custom timeout
         controller.shutdown()
     """
     
@@ -141,56 +152,128 @@ class GripperController:
         monitor_thread = threading.Thread(target=monitor, daemon=True)
         monitor_thread.start()
     
-    def open_gripper(self, blocking: bool = True) -> Dict:
+    def open_gripper(self, blocking: bool = True, timeout: float = 5.0) -> Dict:
         """
         Open the gripper.
-        
+
         Args:
             blocking: If True, wait for movement to complete
-            
+            timeout: Maximum time to wait for movement completion (seconds)
+
         Returns:
             Dictionary with status and gripper position
         """
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-        
+
         with self.state_lock:
             self.current_state = GripperState.OPENING
-        
+
         print("[GripperController] Opening gripper...")
+        start_time = time.time()
         move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_OPEN], moving_time=1.0)
-        
+
         if blocking:
-            time.sleep(1.0)
+            # Wait for movement to complete with timeout protection
+            while True:
+                elapsed_time = time.time() - start_time
+
+                # Check for timeout
+                if elapsed_time >= timeout:
+                    with self.state_lock:
+                        self.current_state = GripperState.UNKNOWN
+                    return {
+                        "success": False,
+                        "error": f"Timeout after {timeout:.1f}s - gripper may be stuck",
+                        "state": "unknown",
+                        "elapsed_time": elapsed_time
+                    }
+
+                # Check if movement completed successfully
+                with self.state_lock:
+                    current_state = self.current_state
+
+                if current_state == GripperState.OPEN:
+                    # Movement completed successfully
+                    break
+                elif current_state == GripperState.OPENING:
+                    # Still moving, continue waiting
+                    time.sleep(0.1)
+                else:
+                    # Unexpected state change
+                    break
+
+            # Final state update if still opening
             with self.state_lock:
-                self.current_state = GripperState.OPEN
-        
+                if self.current_state == GripperState.OPENING:
+                    # Check position to determine final state
+                    if self.gripper_position >= self.OPEN_THRESHOLD:
+                        self.current_state = GripperState.OPEN
+                    else:
+                        self.current_state = GripperState.UNKNOWN
+
         return self.get_gripper_state()
     
-    def close_gripper(self, blocking: bool = True) -> Dict:
+    def close_gripper(self, blocking: bool = True, timeout: float = 5.0) -> Dict:
         """
         Close the gripper.
-        
+
         Args:
             blocking: If True, wait for movement to complete
-            
+            timeout: Maximum time to wait for movement completion (seconds)
+
         Returns:
             Dictionary with status and gripper position
         """
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-        
+
         with self.state_lock:
             self.current_state = GripperState.CLOSING
-        
+
         print("[GripperController] Closing gripper...")
+        start_time = time.time()
         move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_CLOSE], moving_time=1.0)
-        
+
         if blocking:
-            time.sleep(1.0)
+            # Wait for movement to complete with timeout protection
+            while True:
+                elapsed_time = time.time() - start_time
+
+                # Check for timeout
+                if elapsed_time >= timeout:
+                    with self.state_lock:
+                        self.current_state = GripperState.UNKNOWN
+                    return {
+                        "success": False,
+                        "error": f"Timeout after {timeout:.1f}s - gripper may be stuck or blocked",
+                        "state": "unknown",
+                        "elapsed_time": elapsed_time
+                    }
+
+                # Check if movement completed successfully
+                with self.state_lock:
+                    current_state = self.current_state
+
+                if current_state == GripperState.CLOSED:
+                    # Movement completed successfully
+                    break
+                elif current_state == GripperState.CLOSING:
+                    # Still moving, continue waiting
+                    time.sleep(0.1)
+                else:
+                    # Unexpected state change
+                    break
+
+            # Final state update if still closing
             with self.state_lock:
-                self.current_state = GripperState.CLOSED
-        
+                if self.current_state == GripperState.CLOSING:
+                    # Check position to determine final state
+                    if self.gripper_position <= self.CLOSE_THRESHOLD:
+                        self.current_state = GripperState.CLOSED
+                    else:
+                        self.current_state = GripperState.UNKNOWN
+
         return self.get_gripper_state()
     
     def get_gripper_state(self) -> Dict:
@@ -228,20 +311,21 @@ class GripperController:
                 "position_closed": FOLLOWER_GRIPPER_JOINT_CLOSE
             }
     
-    def set_gripper_position(self, position: float, blocking: bool = True) -> Dict:
+    def set_gripper_position(self, position: float, blocking: bool = True, timeout: float = 5.0) -> Dict:
         """
         Set gripper to a specific position.
-        
+
         Args:
             position: Position in radians or normalized (0.0 to 1.0)
             blocking: If True, wait for movement to complete
-            
+            timeout: Maximum time to wait for movement completion (seconds)
+
         Returns:
             Dictionary with status and gripper position
         """
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-        
+
         # If position is between 0 and 1, treat as normalized
         if 0.0 <= position <= 1.0:
             # Convert normalized to actual position
@@ -249,17 +333,40 @@ class GripperController:
             actual_position = FOLLOWER_GRIPPER_JOINT_CLOSE + (position * pos_range)
         else:
             actual_position = position
-        
+
         # Clamp to valid range
-        actual_position = max(FOLLOWER_GRIPPER_JOINT_CLOSE, 
+        actual_position = max(FOLLOWER_GRIPPER_JOINT_CLOSE,
                              min(FOLLOWER_GRIPPER_JOINT_OPEN, actual_position))
-        
+
         print(f"[GripperController] Setting gripper to position: {actual_position:.3f}")
+        start_time = time.time()
         move_grippers([self.bot], [actual_position], moving_time=1.0)
-        
+
         if blocking:
-            time.sleep(1.0)
-        
+            # Wait for movement to complete with timeout protection
+            target_tolerance = 0.05  # Allow 0.05 radians tolerance
+
+            while True:
+                elapsed_time = time.time() - start_time
+
+                # Check for timeout
+                if elapsed_time >= timeout:
+                    return {
+                        "success": False,
+                        "error": f"Timeout after {timeout:.1f}s - gripper may be stuck",
+                        "state": "unknown",
+                        "elapsed_time": elapsed_time,
+                        "target_position": actual_position
+                    }
+
+                # Check if position reached
+                current_position = self.gripper_position
+                if abs(current_position - actual_position) <= target_tolerance:
+                    # Position reached successfully
+                    break
+
+                time.sleep(0.1)  # Check position every 100ms
+
         return self.get_gripper_state()
     
     def sleep_arm(self) -> bool:
@@ -320,13 +427,13 @@ def get_controller() -> GripperController:
         _global_controller.initialize()
     return _global_controller
 
-def open_gripper() -> Dict:
-    """Simple function to open gripper"""
-    return get_controller().open_gripper()
+def open_gripper(blocking: bool = True, timeout: float = 5.0) -> Dict:
+    """Simple function to open gripper with timeout protection"""
+    return get_controller().open_gripper(blocking=blocking, timeout=timeout)
 
-def close_gripper() -> Dict:
-    """Simple function to close gripper"""
-    return get_controller().close_gripper()
+def close_gripper(blocking: bool = True, timeout: float = 5.0) -> Dict:
+    """Simple function to close gripper with timeout protection"""
+    return get_controller().close_gripper(blocking=blocking, timeout=timeout)
 
 def get_gripper_state() -> Dict:
     """Simple function to get gripper state"""
