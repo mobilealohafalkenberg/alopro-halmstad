@@ -7,6 +7,7 @@ Designed to be called from external scripts (e.g., Gemini Live API integration)
 
 import time
 import threading
+import logging
 from enum import Enum
 from typing import Dict, Optional, Tuple, Union
 import warnings
@@ -42,6 +43,7 @@ class GripperState(Enum):
     OPENING = "opening"
     CLOSING = "closing"
     UNKNOWN = "unknown"
+    ERROR = "error"  # Task 2.11: Added ERROR state for monitor failures
 
 
 class GripperController:
@@ -87,6 +89,13 @@ class GripperController:
         self.gripper_position = 0.0
         self.state_lock = threading.Lock()
         self.dry_run = dry_run
+
+        # Task 2.11: Error handling and monitoring
+        self.monitor_failure_count = 0
+        self.monitor_consecutive_errors = 0
+        self.monitor_max_consecutive_errors = 10
+        self.monitor_error_threshold = 50  # Alert threshold for total errors
+        self.monitor_thread_healthy = True
 
         # Gripper position thresholds
         self.OPEN_THRESHOLD = FOLLOWER_GRIPPER_JOINT_OPEN - 0.1
@@ -188,6 +197,23 @@ class GripperController:
             was_clamped = True
 
         return actual_position, was_clamped
+
+    def get_monitor_health(self) -> Dict:
+        """
+        Get position monitor health information (Task 2.11).
+
+        Returns:
+            Dictionary containing monitor health metrics and error counts
+        """
+        with self.state_lock:
+            return {
+                "monitor_healthy": self.monitor_thread_healthy,
+                "total_failures": self.monitor_failure_count,
+                "consecutive_errors": self.monitor_consecutive_errors,
+                "max_consecutive_errors": self.monitor_max_consecutive_errors,
+                "error_threshold": self.monitor_error_threshold,
+                "current_state": self.current_state.value
+            }
         
     def initialize(self) -> bool:
         """
@@ -256,30 +282,127 @@ class GripperController:
     def _start_position_monitor(self):
         """Start background thread to monitor gripper position"""
         def monitor():
-            while self.initialized:
+            # Task 2.11: Enhanced error handling with logging and recovery
+            consecutive_errors = 0
+            max_consecutive_errors = self.monitor_max_consecutive_errors
+
+            while self.initialized and self.monitor_thread_healthy:
                 try:
-                    # Get current gripper position
+                    # Get current gripper position from hardware
                     with self.bot.core.js_mutex:
                         gripper_index = self.bot.gripper.left_finger_index
-                        self.gripper_position = self.bot.core.joint_states.position[gripper_index]
-                    
-                    # Update state based on position
+                        position = self.bot.core.joint_states.position[gripper_index]
+
+                    # Update shared state with lock protection
                     with self.state_lock:
+                        self.gripper_position = position
+
+                        # Update state based on position
                         if self.current_state in [GripperState.OPENING, GripperState.CLOSING]:
                             # Check if movement completed
-                            if self.gripper_position >= self.OPEN_THRESHOLD:
+                            if position >= self.OPEN_THRESHOLD:
                                 if self.current_state == GripperState.OPENING:
                                     self.current_state = GripperState.OPEN
-                            elif self.gripper_position <= self.CLOSE_THRESHOLD:
+                            elif position <= self.CLOSE_THRESHOLD:
                                 if self.current_state == GripperState.CLOSING:
                                     self.current_state = GripperState.CLOSED
-                    
-                except Exception:
-                    pass  # Silently ignore errors in monitor thread
-                
+
+                    # Reset error counters on successful operation
+                    consecutive_errors = 0
+                    self.monitor_consecutive_errors = 0
+
+                except AttributeError as e:
+                    # Handle initialization errors gracefully (common during startup)
+                    consecutive_errors += 1
+                    self.monitor_consecutive_errors = consecutive_errors
+
+                    if consecutive_errors == 1:  # Log only first occurrence to avoid spam
+                        logging.warning(
+                            f"GripperController position monitor waiting for robot initialization: {e}"
+                        )
+                        print(f"[GripperController] Position monitor waiting for initialization: {e}")
+
+                    # Don't count initialization errors toward failure threshold
+
+                except (RuntimeError, OSError) as e:
+                    # Handle ROS/hardware connection errors
+                    consecutive_errors += 1
+                    self.monitor_consecutive_errors = consecutive_errors
+                    self.monitor_failure_count += 1
+
+                    logging.error(
+                        f"GripperController position monitor connection error "
+                        f"(failure #{self.monitor_failure_count}, consecutive: {consecutive_errors}/{max_consecutive_errors}): "
+                        f"{type(e).__name__}: {e}",
+                        exc_info=True
+                    )
+                    print(
+                        f"[GripperController] Position monitor connection error "
+                        f"({consecutive_errors}/{max_consecutive_errors}): {type(e).__name__}: {e}"
+                    )
+
+                    if consecutive_errors >= max_consecutive_errors:
+                        logging.critical(
+                            f"GripperController position monitor failed after {consecutive_errors} consecutive errors! "
+                            f"Setting gripper state to ERROR."
+                        )
+                        print(f"[GripperController] ✗ Position monitor failed - gripper set to ERROR state")
+
+                        with self.state_lock:
+                            self.current_state = GripperState.ERROR
+                        self.monitor_thread_healthy = False
+                        break
+
+                except Exception as e:
+                    # Handle unexpected errors
+                    consecutive_errors += 1
+                    self.monitor_consecutive_errors = consecutive_errors
+                    self.monitor_failure_count += 1
+
+                    logging.error(
+                        f"GripperController position monitor unexpected error "
+                        f"(failure #{self.monitor_failure_count}, consecutive: {consecutive_errors}/{max_consecutive_errors}): "
+                        f"{type(e).__name__}: {e}",
+                        exc_info=True
+                    )
+                    print(
+                        f"[GripperController] Position monitor error "
+                        f"({consecutive_errors}/{max_consecutive_errors}): {type(e).__name__}: {e}"
+                    )
+
+                    # Alert if failures are excessive
+                    if self.monitor_failure_count >= self.monitor_error_threshold:
+                        logging.critical(
+                            f"GripperController monitor has failed {self.monitor_failure_count} times! "
+                            "This may indicate a serious hardware or connection issue."
+                        )
+                        print(
+                            f"[GripperController] ⚠️  WARNING: {self.monitor_failure_count} total monitor failures detected"
+                        )
+
+                    if consecutive_errors >= max_consecutive_errors:
+                        logging.critical(
+                            f"GripperController position monitor failed after {consecutive_errors} consecutive errors! "
+                            f"Setting gripper state to ERROR."
+                        )
+                        print(f"[GripperController] ✗ Position monitor failed - gripper set to ERROR state")
+
+                        with self.state_lock:
+                            self.current_state = GripperState.ERROR
+                        self.monitor_thread_healthy = False
+                        break
+
                 time.sleep(0.1)  # Check 10 times per second
-        
-        monitor_thread = threading.Thread(target=monitor, daemon=True)
+
+            # Monitor thread exit logging
+            if not self.monitor_thread_healthy:
+                logging.warning("GripperController position monitor thread stopped due to errors")
+                print("[GripperController] Position monitor thread stopped due to errors")
+            elif not self.initialized:
+                logging.info("GripperController position monitor thread stopped - controller shutdown")
+                print("[GripperController] Position monitor thread stopped - controller shutdown")
+
+        monitor_thread = threading.Thread(target=monitor, daemon=True, name="GripperPositionMonitor")
         monitor_thread.start()
     
     def open_gripper(self, blocking: bool = True) -> Dict:
@@ -303,6 +426,17 @@ class GripperController:
 
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Task 2.11: Check for ERROR state
+        with self.state_lock:
+            if self.current_state == GripperState.ERROR:
+                return {
+                    "success": False,
+                    "error": "Cannot operate - gripper monitor in ERROR state",
+                    "state": "error",
+                    "monitor_healthy": self.monitor_thread_healthy,
+                    "total_failures": self.monitor_failure_count
+                }
 
         with self.state_lock:
             self.current_state = GripperState.OPENING
@@ -354,6 +488,17 @@ class GripperController:
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
 
+        # Task 2.11: Check for ERROR state
+        with self.state_lock:
+            if self.current_state == GripperState.ERROR:
+                return {
+                    "success": False,
+                    "error": "Cannot operate - gripper monitor in ERROR state",
+                    "state": "error",
+                    "monitor_healthy": self.monitor_thread_healthy,
+                    "total_failures": self.monitor_failure_count
+                }
+
         with self.state_lock:
             self.current_state = GripperState.CLOSING
 
@@ -403,12 +548,25 @@ class GripperController:
             }
         
         with self.state_lock:
+            # Task 2.11: Handle ERROR state
+            if self.current_state == GripperState.ERROR:
+                return {
+                    "success": False,
+                    "error": "Position monitor failed - gripper in ERROR state",
+                    "state": GripperState.ERROR.value,
+                    "position": self.gripper_position,
+                    "position_normalized": 0.0,
+                    "monitor_healthy": self.monitor_thread_healthy,
+                    "total_failures": self.monitor_failure_count,
+                    "consecutive_errors": self.monitor_consecutive_errors
+                }
+
             # Normalize position from 0 (closed) to 1 (open)
             pos_range = FOLLOWER_GRIPPER_JOINT_OPEN - FOLLOWER_GRIPPER_JOINT_CLOSE
             pos_normalized = (self.gripper_position - FOLLOWER_GRIPPER_JOINT_CLOSE) / pos_range
             pos_normalized = max(0.0, min(1.0, pos_normalized))  # Clamp to [0, 1]
-            
-            return {
+
+            result = {
                 "success": True,
                 "state": self.current_state.value,
                 "position": self.gripper_position,
@@ -416,6 +574,16 @@ class GripperController:
                 "position_open": FOLLOWER_GRIPPER_JOINT_OPEN,
                 "position_closed": FOLLOWER_GRIPPER_JOINT_CLOSE
             }
+
+            # Task 2.11: Add monitor health info if there have been failures
+            if self.monitor_failure_count > 0:
+                result.update({
+                    "monitor_healthy": self.monitor_thread_healthy,
+                    "total_failures": self.monitor_failure_count,
+                    "consecutive_errors": self.monitor_consecutive_errors
+                })
+
+            return result
     
     def set_gripper_position(self, position: Union[int, float], blocking: bool = True) -> Dict:
         """
@@ -441,6 +609,17 @@ class GripperController:
 
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
+
+        # Task 2.11: Check for ERROR state
+        with self.state_lock:
+            if self.current_state == GripperState.ERROR:
+                return {
+                    "success": False,
+                    "error": "Cannot operate - gripper monitor in ERROR state",
+                    "state": "error",
+                    "monitor_healthy": self.monitor_thread_healthy,
+                    "total_failures": self.monitor_failure_count
+                }
 
         if self.dry_run:
             print(f"[GripperController] DRY RUN: Would set gripper to position: {actual_position:.3f}")

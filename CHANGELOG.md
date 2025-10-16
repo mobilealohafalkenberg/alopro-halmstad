@@ -156,6 +156,177 @@ controller = GripperController(dry_run=True)
 - **None** - this task enables testing for all following tasks
 - **Enables**: All future gripper controller tasks can now be tested safely
 
+### Task 2.11: Improve Error Handling and Add Exception Logging Phase: 2 (Robustness & Error Handling)
+
+**Date**: 2025-10-16
+**Phase**: 2 (Gripper Controller)
+**Task ID**: 2.11
+**Task Name**: Improve Error Handling and Add Exception Logging Phase: 2 (Robustness & Error Handling)
+**Test File**: test_gripper/test_exception_handling.py
+**Author**: Claude Code
+**Branch**: `GC_test_branch`
+
+#### Summary
+Replaced dangerous bare `except: pass` statements with comprehensive exception handling and logging. Added ERROR state detection, error counter tracking, and graceful error recovery. This fixes a critical safety issue where position monitor failures were silently ignored, potentially causing stale position data and unsafe operations.
+
+#### Problem Addressed
+- **Critical Safety Issue**: Lines 277-278 used bare `except: pass` that silently ignored ALL exceptions in position monitor thread
+- **Hidden Failures**: ROS disconnects, mutex timeouts, and hardware faults were completely suppressed
+- **Stale Data Risk**: System operated with outdated gripper position data when monitor failed
+- **No Error Recovery**: No mechanism to detect or recover from repeated monitor failures
+- **Missing Diagnostics**: No way to detect or diagnose position monitoring issues
+
+#### Solution Implemented
+**Comprehensive Exception Handling System:**
+- Specific exception handling for different error types (AttributeError, RuntimeError, OSError)
+- Detailed logging with timestamps and stack traces
+- Error counter tracking with consecutive and total failure counts
+- ERROR state when failure threshold exceeded
+- Graceful error recovery and thread health monitoring
+
+#### Changes Made
+
+1. **gripper_controller.py**
+   - Added `logging` import for structured error logging
+   - Added `ERROR` state to `GripperState` enum
+   - Added error tracking instance variables in `__init__()`:
+     - `monitor_failure_count` - total failures
+     - `monitor_consecutive_errors` - consecutive error count
+     - `monitor_max_consecutive_errors` - threshold (10)
+     - `monitor_error_threshold` - alert threshold (50)
+     - `monitor_thread_healthy` - health status flag
+   - **Replaced bare `except: pass` with comprehensive handling:**
+     - `AttributeError` - initialization errors (common during startup)
+     - `RuntimeError/OSError` - ROS/hardware connection errors
+     - `Exception` - unexpected errors with full logging
+   - Added `get_monitor_health()` method for diagnostics
+   - Enhanced `get_gripper_state()` to handle ERROR state and include monitor health
+   - Added ERROR state checks in all movement methods to prevent unsafe operations
+   - Enhanced monitor thread with descriptive naming and exit logging
+
+2. **test_gripper/test_exception_handling.py** (New File)
+   - Comprehensive test suite with 8 test scenarios and 41 individual tests
+   - Tests ERROR state enum and accessibility
+   - Tests monitor health information and tracking
+   - Tests error counter initialization and functionality
+   - Tests ERROR state prevents gripper operations
+   - Tests monitor health inclusion in responses
+   - Tests mock exception handling and recovery logic
+   - Tests logging setup and thread naming
+
+#### Before vs After
+
+**Before (Dangerous):**
+```python
+def monitor():
+    while self.initialized:
+        try:
+            # ... position monitoring code
+        except Exception:
+            pass  # Silently ignore ALL errors - DANGEROUS!
+```
+
+**After (Safe & Robust):**
+```python
+def monitor():
+    consecutive_errors = 0
+    max_consecutive_errors = self.monitor_max_consecutive_errors
+
+    while self.initialized and self.monitor_thread_healthy:
+        try:
+            # ... position monitoring code
+            consecutive_errors = 0  # Reset on success
+
+        except AttributeError as e:
+            # Handle initialization errors gracefully
+            if consecutive_errors == 0:
+                logging.warning(f"Position monitor waiting for initialization: {e}")
+
+        except (RuntimeError, OSError) as e:
+            # Handle ROS/hardware connection errors
+            consecutive_errors += 1
+            logging.error(f"Connection error ({consecutive_errors}/{max_consecutive_errors}): {e}")
+
+            if consecutive_errors >= max_consecutive_errors:
+                logging.critical("Position monitor failed - setting ERROR state")
+                with self.state_lock:
+                    self.current_state = GripperState.ERROR
+                self.monitor_thread_healthy = False
+                break
+```
+
+#### Key Features
+
+**Error Classification & Handling:**
+```python
+# Graceful initialization handling
+except AttributeError as e:
+    logging.warning("Position monitor waiting for initialization")
+
+# Critical connection error handling
+except (RuntimeError, OSError) as e:
+    logging.error("Connection error with full context and recovery")
+
+# Comprehensive unexpected error handling
+except Exception as e:
+    logging.error("Unexpected error with stack trace")
+```
+
+**ERROR State Protection:**
+```python
+# All operations check for ERROR state
+if self.current_state == GripperState.ERROR:
+    return {
+        "success": False,
+        "error": "Cannot operate - gripper monitor in ERROR state",
+        "monitor_healthy": self.monitor_thread_healthy
+    }
+```
+
+**Monitor Health Diagnostics:**
+```python
+health = controller.get_monitor_health()
+# Returns: {
+#   "monitor_healthy": True/False,
+#   "total_failures": 15,
+#   "consecutive_errors": 0,
+#   "max_consecutive_errors": 10,
+#   "error_threshold": 50,
+#   "current_state": "open"
+# }
+```
+
+#### Testing Results
+
+**All Tests Pass (100% Success Rate):**
+- ✅ Test 1: ERROR State Enum (2 tests)
+- ✅ Test 2: Monitor Health Information (8 tests)
+- ✅ Test 3: Error Counter Initialization (10 tests)
+- ✅ Test 4: ERROR State Handling in Methods (7 tests)
+- ✅ Test 5: Monitor Health in Normal Responses (4 tests)
+- ✅ Test 6: Mock Monitor Exception Handling (4 tests)
+- ✅ Test 7: Logging Setup (4 tests)
+- ✅ Test 8: Thread Naming (1 test)
+
+**Performance:** All tests complete instantly in dry-run mode
+
+#### Impact
+- **Critical Safety Fix**: Eliminates silent failure mode that could cause unsafe operations
+- **Reliability**: Robust error handling prevents system crashes and undefined behavior
+- **Diagnostics**: Comprehensive error tracking and health monitoring for debugging
+- **Recovery**: Graceful degradation with ERROR state prevents unsafe operations
+- **Maintainability**: Structured logging helps developers diagnose and fix issues
+- **Transparency**: Users get clear feedback about system health and failures
+
+#### Files Modified
+- `gemini-live/gripper_controller.py` (lines 9: imports, 39: ERROR state, 93-98: error tracking, 265-389: enhanced monitor, 201-216: health method, 529-564: ERROR state handling, 430-439,467-476,613-622: movement method protection)
+- `gemini-live/test/test_gripper/test_exception_handling.py` (new file, 581 lines)
+
+#### Dependencies
+- **Prerequisite**: Task 2.10 (Parameter Validation) for comprehensive robustness
+- **Merges**: Original Task 2.1 (Exception Logging) requirements
+- **Enables**: Safe operation and debugging for all future gripper tasks
+
 ### Task 2.10: Add Parameter Validation Phase: 2 (Robustness & Error Handling)
 
 **Date**: 2025-10-16
