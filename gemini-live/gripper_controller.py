@@ -11,6 +11,7 @@ import logging
 from enum import Enum
 from typing import Dict, Optional, Tuple, Union
 import warnings
+from dataclasses import dataclass
 
 # Try to import robot dependencies, but allow dry-run mode without them
 try:
@@ -34,6 +35,65 @@ except ImportError:
     START_ARM_POSE = [0.0, -0.96, 1.16, 0.0, -0.3, 0.0, 0.0]  # 7 elements for full pose
     ROBOT_DEPS_AVAILABLE = False
     print("Robot dependencies not available - only dry-run mode supported")
+
+
+@dataclass
+class GripperSafetyConfig:
+    """
+    Safety configuration parameters for gripper operations (Task 2.12).
+
+    These constraints ensure safe operation by limiting forces, timeouts,
+    and providing current monitoring for object detection.
+    """
+    # Current limits (mA)
+    max_current_limit: int = 300  # Maximum current limit for gripper motor
+    safe_current_limit: int = 250  # Safe current limit for normal operations
+    object_detection_current: int = 150  # Current threshold for object detection
+
+    # Force safety (estimated from current)
+    max_grip_force_estimate: float = 20.0  # N - estimated maximum grip force
+    safe_grip_force_estimate: float = 15.0  # N - safe grip force for delicate objects
+
+    # Timeout limits (seconds)
+    max_operation_timeout: float = 10.0  # Maximum time for any gripper operation
+    movement_timeout: float = 5.0  # Timeout for gripper movement operations
+    force_stabilization_timeout: float = 2.0  # Time to wait for force stabilization
+
+    # Position safety margins
+    position_safety_margin: float = 0.05  # Safety margin from absolute limits (radians)
+    rapid_change_threshold: float = 0.5  # Maximum allowed position change per second
+
+    # Current monitoring
+    current_monitor_enabled: bool = True  # Enable current monitoring for safety
+    current_spike_threshold: int = 400  # Current spike detection threshold (mA)
+    current_avg_window: int = 5  # Window size for current averaging
+
+    # Object detection
+    object_present_threshold: int = 120  # Current above this indicates object present
+    object_crush_threshold: int = 280  # Current above this indicates potential crushing
+
+    # Emergency thresholds
+    emergency_current_threshold: int = 350  # Emergency stop threshold
+    emergency_force_threshold: float = 25.0  # Emergency force threshold (N)
+
+
+@dataclass
+class SafetyValidationResult:
+    """Result of safety constraint validation (Task 2.12)"""
+    valid: bool
+    risk_level: str  # "low", "medium", "high", "critical"
+    message: str
+    constraints_violated: list
+    safety_metrics: dict
+
+    def to_dict(self):
+        return {
+            "valid": self.valid,
+            "risk_level": self.risk_level,
+            "message": self.message,
+            "constraints_violated": self.constraints_violated,
+            "safety_metrics": self.safety_metrics
+        }
 
 
 class GripperState(Enum):
@@ -96,6 +156,16 @@ class GripperController:
         self.monitor_max_consecutive_errors = 10
         self.monitor_error_threshold = 50  # Alert threshold for total errors
         self.monitor_thread_healthy = True
+
+        # Task 2.12: Safety constraints and monitoring
+        self.safety_config = GripperSafetyConfig()
+        self.current_readings = []  # Ring buffer for current monitoring
+        self.last_position_change_time = time.time()
+        self.last_position = 0.0
+        self.safety_violations = []
+        self.object_detected = False
+        self.grip_force_estimate = 0.0
+        self.operation_start_time = None
 
         # Gripper position thresholds
         self.OPEN_THRESHOLD = FOLLOWER_GRIPPER_JOINT_OPEN - 0.1
@@ -197,6 +267,174 @@ class GripperController:
             was_clamped = True
 
         return actual_position, was_clamped
+
+    def check_safety_constraints(self, operation: str, target_position: float = None,
+                                current_reading: float = None) -> SafetyValidationResult:
+        """
+        Check safety constraints for gripper operations (Task 2.12).
+
+        Args:
+            operation: Type of operation ("open", "close", "set_position", "monitor")
+            target_position: Target position for the operation (if applicable)
+            current_reading: Current reading from motor (mA, if available)
+
+        Returns:
+            SafetyValidationResult with validation status and details
+        """
+        violations = []
+        safety_metrics = {}
+        risk_level = "low"
+
+        try:
+            # 1. Position constraints
+            if target_position is not None:
+                # Check absolute position limits with safety margin
+                safe_min = FOLLOWER_GRIPPER_JOINT_CLOSE + self.safety_config.position_safety_margin
+                safe_max = FOLLOWER_GRIPPER_JOINT_OPEN - self.safety_config.position_safety_margin
+
+                if target_position < safe_min:
+                    violations.append(f"Target position {target_position:.3f} below safe minimum {safe_min:.3f}")
+                    risk_level = "medium"
+                elif target_position > safe_max:
+                    violations.append(f"Target position {target_position:.3f} above safe maximum {safe_max:.3f}")
+                    risk_level = "medium"
+
+                # Check for rapid position changes (only if time interval is reasonable)
+                change_rate = 0.0
+                if hasattr(self, 'gripper_position'):
+                    position_change = abs(target_position - self.gripper_position)
+                    time_since_last = time.time() - self.last_position_change_time
+                    if time_since_last > 0.1:  # Only check if more than 100ms since last change
+                        change_rate = position_change / time_since_last
+                        if change_rate > self.safety_config.rapid_change_threshold:
+                            violations.append(f"Position change rate {change_rate:.2f} rad/s exceeds limit {self.safety_config.rapid_change_threshold}")
+                            risk_level = "high"
+
+                safety_metrics["target_position"] = target_position
+                safety_metrics["position_change_rate"] = change_rate
+
+            # 2. Current monitoring and force estimation
+            if current_reading is not None:
+                self._update_current_readings(current_reading)
+
+                # Check current limits (emergency takes priority)
+                if current_reading > self.safety_config.emergency_current_threshold:
+                    violations.append(f"Emergency current threshold exceeded: {current_reading}mA > {self.safety_config.emergency_current_threshold}mA")
+                    risk_level = "critical"  # Force critical level for emergency
+                elif current_reading > self.safety_config.safe_current_limit:
+                    violations.append(f"Safe current limit exceeded: {current_reading}mA > {self.safety_config.safe_current_limit}mA")
+                    if risk_level not in ["critical", "high"]:
+                        risk_level = "medium"
+
+                # Detect current spikes (only if not already critical)
+                if len(self.current_readings) >= 2:
+                    avg_current = sum(self.current_readings[-3:]) / min(3, len(self.current_readings))
+                    if current_reading > avg_current + self.safety_config.current_spike_threshold:
+                        violations.append(f"Current spike detected: {current_reading}mA vs average {avg_current:.1f}mA")
+                        if risk_level not in ["critical"]:
+                            risk_level = "high"
+
+                # Object detection
+                self.object_detected = current_reading > self.safety_config.object_present_threshold
+                if current_reading > self.safety_config.object_crush_threshold:
+                    violations.append(f"Object crushing risk: current {current_reading}mA > {self.safety_config.object_crush_threshold}mA")
+                    if risk_level not in ["critical"]:
+                        risk_level = "high"
+
+                # Estimate grip force (simplified linear relationship)
+                self.grip_force_estimate = (current_reading / self.safety_config.max_current_limit) * self.safety_config.max_grip_force_estimate
+
+                safety_metrics.update({
+                    "current_reading": current_reading,
+                    "average_current": sum(self.current_readings[-5:]) / min(5, len(self.current_readings)) if self.current_readings else 0,
+                    "object_detected": self.object_detected,
+                    "grip_force_estimate": self.grip_force_estimate
+                })
+
+            # 3. Operation timeout checks
+            if self.operation_start_time is not None:
+                operation_duration = time.time() - self.operation_start_time
+                if operation_duration > self.safety_config.max_operation_timeout:
+                    violations.append(f"Operation timeout: {operation_duration:.1f}s > {self.safety_config.max_operation_timeout}s")
+                    risk_level = "critical"
+                elif operation_duration > self.safety_config.movement_timeout and operation in ["open", "close", "set_position"]:
+                    violations.append(f"Movement timeout: {operation_duration:.1f}s > {self.safety_config.movement_timeout}s")
+                    if risk_level == "low":
+                        risk_level = "medium"
+
+                safety_metrics["operation_duration"] = operation_duration
+
+            # 4. State-based safety checks
+            if hasattr(self, 'current_state'):
+                if self.current_state == GripperState.ERROR:
+                    violations.append("Gripper in ERROR state - operation not safe")
+                    risk_level = "critical"
+
+                safety_metrics["current_state"] = self.current_state.value
+
+            # Compile result - allow operations with low to medium risk
+            is_valid = len(violations) == 0 or risk_level in ["low", "medium"]
+            if len(violations) == 0:
+                message = "Safety constraints satisfied"
+            elif is_valid:
+                message = f"Safety warnings detected: {len(violations)} issues (Risk: {risk_level}) - operation allowed"
+            else:
+                message = f"Safety violations detected: {len(violations)} issues (Risk: {risk_level}) - operation blocked"
+
+            return SafetyValidationResult(
+                valid=is_valid,
+                risk_level=risk_level,
+                message=message,
+                constraints_violated=violations,
+                safety_metrics=safety_metrics
+            )
+
+        except Exception as e:
+            logging.error(f"Safety constraint checking failed: {e}", exc_info=True)
+            return SafetyValidationResult(
+                valid=False,
+                risk_level="critical",
+                message=f"Safety validation error: {e}",
+                constraints_violated=[f"Safety system error: {e}"],
+                safety_metrics={}
+            )
+
+    def _update_current_readings(self, current: float):
+        """Update ring buffer of current readings for monitoring"""
+        self.current_readings.append(current)
+
+        # Keep only recent readings (ring buffer)
+        max_readings = self.safety_config.current_avg_window * 2
+        if len(self.current_readings) > max_readings:
+            self.current_readings = self.current_readings[-max_readings:]
+
+    def get_safety_status(self) -> Dict:
+        """
+        Get current safety status and metrics (Task 2.12).
+
+        Returns:
+            Dictionary with safety status, constraints, and current metrics
+        """
+        with self.state_lock:
+            return {
+                "safety_enabled": True,
+                "safety_config": {
+                    "max_current_limit": self.safety_config.max_current_limit,
+                    "safe_current_limit": self.safety_config.safe_current_limit,
+                    "movement_timeout": self.safety_config.movement_timeout,
+                    "object_detection_enabled": self.safety_config.current_monitor_enabled
+                },
+                "current_metrics": {
+                    "object_detected": self.object_detected,
+                    "grip_force_estimate": self.grip_force_estimate,
+                    "recent_violations": len(self.safety_violations),
+                    "average_current": sum(self.current_readings[-5:]) / min(5, len(self.current_readings)) if self.current_readings else 0.0
+                },
+                "operation_status": {
+                    "operation_active": self.operation_start_time is not None,
+                    "operation_duration": time.time() - self.operation_start_time if self.operation_start_time else 0.0
+                }
+            }
 
     def get_monitor_health(self) -> Dict:
         """
@@ -438,6 +676,19 @@ class GripperController:
                     "total_failures": self.monitor_failure_count
                 }
 
+        # Task 2.12: Safety constraint validation
+        safety_result = self.check_safety_constraints("open", target_position=FOLLOWER_GRIPPER_JOINT_OPEN)
+        if not safety_result.valid:
+            return {
+                "success": False,
+                "error": f"Safety constraints violated: {safety_result.message}",
+                "state": self.current_state.value,
+                "safety_result": safety_result.to_dict()
+            }
+
+        # Start operation timing
+        self.operation_start_time = time.time()
+
         with self.state_lock:
             self.current_state = GripperState.OPENING
 
@@ -464,7 +715,23 @@ class GripperController:
             with self.state_lock:
                 self.current_state = GripperState.OPEN
 
-        return self.get_gripper_state()
+        # Task 2.12: Complete operation timing and update position tracking
+        self.operation_start_time = None
+        self.last_position_change_time = time.time()
+        self.last_position = FOLLOWER_GRIPPER_JOINT_OPEN
+
+        result = self.get_gripper_state()
+
+        # Add safety metrics to result
+        if hasattr(self, 'safety_config'):
+            result["safety_status"] = {
+                "constraints_checked": True,
+                "operation_completed": True,
+                "grip_force_estimate": self.grip_force_estimate,
+                "object_detected": self.object_detected
+            }
+
+        return result
     
     def close_gripper(self, blocking: bool = True) -> Dict:
         """
