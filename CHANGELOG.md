@@ -325,6 +325,372 @@ All tests passed successfully.
 
 ---
 
+### Task 2.3: Deprecate Global Controller Singleton Pattern
+
+**Date**: 2025-10-15
+**Phase**: 2 (Gripper Controller)
+**Task ID**: 2.3
+**Task Name**: Deprecate Global Controller Singleton Pattern
+**Migration Guide**: docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md
+**Author**: fasna
+**Branch**: `fix/2.1-2.2-gripper-monitor-safety_fas`
+
+#### Summary
+Deprecated the global controller singleton pattern in `gripper_controller.py` (lines 326-460) to improve code quality, testability, and consistency with `arm_controller.py` (Task 1.9). Added deprecation warnings to all 5 singleton functions guiding users toward explicit controller instance management. Pattern will be completely removed in v2.0.
+
+#### Problem Identified
+The gripper controller used the same anti-pattern as arm_controller.py had before Task 1.9:
+- Module-level global variable `_global_controller`
+- Convenience functions (`get_controller()`, `open_gripper()`, `close_gripper()`, `get_gripper_state()`, `cleanup()`)
+- Hidden global state made testing difficult
+- Prevented managing multiple gripper instances
+- Inconsistent with arm_controller.py best practices
+
+#### Solution Implemented
+1. **Added `warnings` import** (Line 10)
+2. **Added deprecation warnings to all 5 functions**:
+   - `get_controller()` - Lines 346-351: Warns to create explicit instances
+   - `open_gripper()` - Lines 375-380: Warns to use `controller.open_gripper()`
+   - `close_gripper()` - Lines 400-405: Warns to use `controller.close_gripper()`
+   - `get_gripper_state()` - Lines 425-430: Warns to use `controller.get_gripper_state()`
+   - `cleanup()` - Lines 451-456: Warns to use `controller.shutdown()`
+3. **Enhanced documentation** with migration examples in each function's docstring
+4. **Created comprehensive migration guide** at `docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md`
+
+#### Code Changes
+
+**Import Addition:**
+```python
+# Line 10
+import warnings
+```
+
+**Deprecation Warning Pattern (Applied to All 5 Functions):**
+```python
+def get_controller() -> GripperController:
+    """
+    Get or create global controller instance.
+
+    .. deprecated:: 2.3
+        The global controller singleton pattern is deprecated and will be removed in version 2.0.
+        Instead, create and manage controller instances explicitly:
+
+        Example:
+            # Old (deprecated):
+            controller = get_controller()
+
+            # New (recommended):
+            controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+            controller.initialize()
+    """
+    warnings.warn(
+        "get_controller() is deprecated and will be removed in version 2.0. "
+        "Create controller instances explicitly: controller = GripperController(robot_model='vx300s', robot_name='follower_left'); controller.initialize()",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    global _global_controller
+    if _global_controller is None:
+        _global_controller = GripperController()
+        _global_controller.initialize()
+    return _global_controller
+```
+
+#### Migration Example
+
+**Before (Deprecated):**
+```python
+from gripper_controller import get_controller, open_gripper, close_gripper
+
+controller = get_controller()  # Hidden global
+open_gripper()   # Uses hidden global
+close_gripper()  # Uses hidden global
+```
+
+**After (Recommended):**
+```python
+from gripper_controller import GripperController
+
+controller = GripperController(robot_model='vx300s', robot_name='follower_left')
+controller.initialize()
+controller.open_gripper()
+controller.close_gripper()
+controller.shutdown()
+```
+
+#### Impact
+- **Architecture Improvement**: Eliminates anti-pattern of hidden global state
+- **Better Testability**: Enables proper mocking and isolation in unit tests
+- **Multi-Gripper Support**: Can now manage multiple gripper instances simultaneously
+- **Consistency**: Matches arm_controller.py pattern from Task 1.9
+- **Clear Ownership**: Controller lifecycle management is now explicit
+- **Thread Safety**: Reduces risks from shared global state
+- **Backward Compatible**: All code works in v2.3 (with warnings)
+- **Breaking Change in v2.0**: Users must migrate before v2.0 release
+
+#### Files Modified
+- `gripper_controller.py`:
+  - Line 10: Added `warnings` import
+  - Lines 330-356: Enhanced `get_controller()` with deprecation warning
+  - Lines 358-381: Enhanced `open_gripper()` with deprecation warning
+  - Lines 383-406: Enhanced `close_gripper()` with deprecation warning
+  - Lines 408-431: Enhanced `get_gripper_state()` with deprecation warning
+  - Lines 433-460: Enhanced `cleanup()` with deprecation warning
+- `docs/MIGRATION_GUIDE_GRIPPER_SINGLETON_REMOVAL.md` (new file)
+
+#### Migration Guide Highlights
+The comprehensive migration guide includes:
+- Before/after code examples for all patterns
+- Context manager pattern (best practice)
+- Class-based approach for robot tasks
+- Dependency injection examples
+- Multi-gripper control (new capability)
+- Common migration mistakes and how to avoid them
+- FAQ section
+- Timeline for deprecation and removal
+
+#### Testing Recommendations
+1. Enable deprecation warnings: `warnings.simplefilter('always', DeprecationWarning)`
+2. Run code and identify all deprecated function usage
+3. Update to explicit controller instances following migration guide
+4. Test with dry-run mode: `GripperController(dry_run=True)` (when Task 2.4 is complete)
+5. Verify no warnings after migration
+6. Test multiple gripper instances if controlling multiple grippers
+
+#### Migration Timeline
+- **v2.3 (Current)**: Deprecation warnings added, old functions still work
+- **User Migration Period**: Update code using migration guide
+- **v2.0 (Future)**: Complete removal of singleton functions
+
+#### Related Tasks
+- Follows same pattern as Task 1.9 (Arm Controller Singleton Removal)
+- Part of Phase 2 gripper controller modernization
+- Improves consistency across all controllers
+
+---
+
+### Task 2.4: Add Dry-Run Mode for Hardware-Independent Testing
+
+**Date**: 2025-10-15
+**Phase**: 2 (Gripper Controller)
+**Task ID**: 2.4
+**Task Name**: Add Dry-Run Mode for Hardware-Independent Testing
+**Test File**: test/test_gripper/test_gripper_dry_run.py (recommended)
+**Author**: fasna
+**Branch**: `fix/2.1-2.2-gripper-monitor-safety_fas`
+
+#### Summary
+Implemented dry-run mode for gripper_controller.py to enable hardware-independent testing, matching the pattern from arm_controller.py Task 1.4. This HIGH PRIORITY testing infrastructure feature allows developers to test gripper control logic without robot hardware connected, enabling automated testing, CI/CD integration, and faster development iteration.
+
+#### Problem Identified
+gripper_controller.py lacked dry-run mode that arm_controller.py already had:
+- Testing required physical robot hardware
+- No way to test control logic independently
+- Prevented CI/CD automated testing
+- Slowed development iteration cycles
+- Made debugging difficult for developers without hardware access
+- Inconsistent with arm_controller.py which has full dry-run support
+
+#### Solution Implemented
+1. **Added `dry_run` parameter to `__init__()`** (Line 51)
+   - New boolean parameter with default value `False`
+   - Stored as instance variable for use throughout class
+
+2. **Updated `initialize()` for dry-run mode** (Lines 73-80)
+   - Early return path when `dry_run=True`
+   - Skips all ROS/hardware initialization
+   - Sets initial state (CLOSED, position at CLOSE value)
+   - Prints clear dry-run indicators
+
+3. **Added dry-run simulation to movement methods**:
+   - **`open_gripper()`** (Lines 187-199): Simulates opening, updates position and state
+   - **`close_gripper()`** (Lines 224-236): Simulates closing, updates position and state
+   - **`set_gripper_position()`** (Lines 306-324): Simulates arbitrary position movements
+
+4. **Skipped position monitor thread in dry-run** (Lines 130-133)
+   - Monitor thread not needed when position is set manually
+   - Prints clear dry-run message
+
+5. **Updated `shutdown()` for dry-run** (Lines 370-374)
+   - Skips hardware shutdown when no hardware was initialized
+
+#### Code Changes
+
+**Parameter Addition:**
+```python
+# Line 51
+def __init__(self, robot_model='vx300s', robot_name='follower_left', dry_run=False):
+    self.dry_run = dry_run
+```
+
+**Initialize with Dry-Run:**
+```python
+# Lines 73-80
+def initialize(self) -> bool:
+    # Dry-run mode: Skip hardware initialization
+    if self.dry_run:
+        print("[GripperController] 🔧 DRY-RUN MODE: Skipping hardware initialization")
+        self.initialized = True
+        self.current_state = GripperState.CLOSED
+        self.gripper_position = FOLLOWER_GRIPPER_JOINT_CLOSE
+        print("[GripperController] ✓ Dry-run initialization complete")
+        return True
+
+    # Normal hardware initialization continues...
+```
+
+**Movement Simulation Pattern:**
+```python
+# Example from open_gripper() - Lines 187-199
+# Dry-run mode: Simulate movement
+if self.dry_run:
+    if blocking:
+        time.sleep(0.1)  # Simulate brief movement
+        with self.state_lock:
+            self.gripper_position = FOLLOWER_GRIPPER_JOINT_OPEN
+            self.current_state = GripperState.OPEN
+    print("[GripperController] 🔧 DRY-RUN: Simulated gripper open")
+else:
+    # Hardware mode: Execute real movement
+    move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_OPEN], moving_time=1.0)
+```
+
+**Position Monitor Skip:**
+```python
+# Lines 130-133
+def _start_position_monitor(self):
+    # Dry-run mode: Skip monitoring thread (position is set manually)
+    if self.dry_run:
+        print("[GripperController] 🔧 DRY-RUN: Skipping position monitor thread")
+        return
+```
+
+#### Usage Examples
+
+**Hardware Mode (Current Default):**
+```python
+# Requires robot hardware
+gripper = GripperController(robot_model='vx300s', robot_name='follower_left')
+gripper.initialize()  # Connects to robot
+gripper.open_gripper()
+gripper.close_gripper()
+gripper.shutdown()
+```
+
+**Dry-Run Mode (NEW):**
+```python
+# Works without robot hardware
+gripper = GripperController(
+    robot_model='vx300s',
+    robot_name='follower_left',
+    dry_run=True  # Enable simulation mode
+)
+
+gripper.initialize()  # Instant, no hardware connection
+gripper.open_gripper()  # Simulated, updates internal state
+state = gripper.get_gripper_state()  # Returns simulated state
+print(state)  # {'state': 'open', 'position': 0.037, ...}
+gripper.close_gripper()  # Simulated
+gripper.shutdown()  # No hardware cleanup needed
+```
+
+#### Impact
+- **Testing Infrastructure**: Enables testing without robot hardware (HIGH PRIORITY)
+- **Development Speed**: Developers can test locally without hardware access
+- **CI/CD Ready**: Automated testing in continuous integration pipelines
+- **Consistency**: Matches arm_controller.py pattern from Task 1.4
+- **Faster Iteration**: Quick testing of control logic changes
+- **Debugging**: Easier to debug state transitions without hardware
+- **Multi-Developer**: Multiple developers can work in parallel
+- **Backward Compatible**: Default `dry_run=False` maintains existing behavior
+
+#### Files Modified
+- `gripper_controller.py`:
+  - Line 51: Added `dry_run` parameter to `__init__()`
+  - Lines 73-80: Added dry-run initialization path
+  - Lines 130-133: Skip position monitor in dry-run
+  - Lines 187-199: Dry-run simulation in `open_gripper()`
+  - Lines 224-236: Dry-run simulation in `close_gripper()`
+  - Lines 306-324: Dry-run simulation in `set_gripper_position()`
+  - Lines 370-374: Skip hardware shutdown in dry-run
+
+#### Dry-Run State Behavior
+
+**State Transitions in Dry-Run:**
+- `initialize()`: Sets state to CLOSED, position to FOLLOWER_GRIPPER_JOINT_CLOSE
+- `open_gripper()`: Sets state to OPEN, position to FOLLOWER_GRIPPER_JOINT_OPEN
+- `close_gripper()`: Sets state to CLOSED, position to FOLLOWER_GRIPPER_JOINT_CLOSE
+- `set_gripper_position()`: Sets position to target, updates state based on thresholds
+- `get_gripper_state()`: Returns current simulated state (works identically in both modes)
+
+**Thread Safety:**
+- All state updates use `self.state_lock` even in dry-run
+- Ensures consistent behavior between hardware and simulation modes
+
+#### Testing Recommendations
+1. Create test file: `test/test_gripper/test_gripper_dry_run.py`
+2. Test initialization in dry-run mode
+3. Test all movement methods (open, close, set_position)
+4. Verify state transitions match hardware behavior
+5. Test `get_gripper_state()` returns correct simulated state
+6. Verify shutdown doesn't attempt hardware cleanup
+7. Test with gripper coordination in trajectory execution
+8. Compare dry-run output with hardware mode for consistency
+
+#### Example Test Structure
+```python
+# test/test_gripper/test_gripper_dry_run.py
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from gripper_controller import GripperController
+
+def test_dry_run_initialization():
+    gripper = GripperController(dry_run=True)
+    assert gripper.initialize() == True
+    assert gripper.initialized == True
+    print("✓ TEST 1: Dry-run initialization works")
+
+def test_dry_run_movements():
+    gripper = GripperController(dry_run=True)
+    gripper.initialize()
+
+    # Test open
+    result = gripper.open_gripper()
+    assert result['success'] == True
+    assert result['state'] == 'open'
+    print("✓ TEST 2: Dry-run open works")
+
+    # Test close
+    result = gripper.close_gripper()
+    assert result['success'] == True
+    assert result['state'] == 'closed'
+    print("✓ TEST 3: Dry-run close works")
+
+    gripper.shutdown()
+
+if __name__ == "__main__":
+    test_dry_run_initialization()
+    test_dry_run_movements()
+    print("\n✅ All dry-run tests passed!")
+```
+
+#### Benefits for Phase 2 Development
+- **Unblocks Task 2.5** (Parameter Validation): Can test validation without hardware
+- **Unblocks Task 2.7** (Safety Constraints): Can test safety checks in simulation
+- **Unblocks Task 2.11** (Testing Infrastructure): Enables comprehensive test suite
+- **Enables Task 2.6** (Error Handling): Can test error scenarios without hardware
+- **Accelerates All Future Tasks**: All subsequent gripper features can be tested in dry-run
+
+#### Related Tasks
+- Follows same pattern as **Task 1.4** (Arm Controller Dry-Run Mode)
+- Part of **Phase 1 Critical Safety & Consistency** in UNIFIED_GRIPPER_TASKS.md
+- Marked as **HIGH PRIORITY** - Testing Infrastructure
+- **Estimated Time**: 3-4 hours (COMPLETED)
+
+---
+
 ## 2025-10-07
 
 ### Phase 1 - Infrastructure & Testing
