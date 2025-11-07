@@ -264,19 +264,27 @@ async def handle_tool_call(request: web.Request) -> web.Response:
             # Execute multi-waypoint trajectory with gripper coordination
             trajectory = args.get('trajectory', [])
             speed = args.get('speed', 'slow')  # Default to slow for safety
-            
-            # Map speed to moving_time
-            speed_map = {'slow': 2.5, 'medium': 1.5, 'fast': 0.8}
-            moving_time = speed_map.get(speed, 1.5)
-            
+
             if arm_controller and arm_controller.initialized:
-                # Use the new execute_trajectory method with gripper coordination
+                # Use non-blocking execution to get trajectory_id
                 result = arm_controller.execute_trajectory(
                     waypoints=trajectory,
                     speed=speed,
-                    coordinate_with_gripper=gripper_controller if gripper_controller and gripper_controller.initialized else None
+                    coordinate_with_gripper=gripper_controller if gripper_controller and gripper_controller.initialized else None,
+                    blocking=False  # Non-blocking - returns trajectory_id immediately
                 )
-                print(f"[Bridge] Trajectory execution: {result.get('waypoints_completed', []).__len__()}/{result.get('total_waypoints', 0)} waypoints")
+
+                if result.get('success'):
+                    trajectory_id = result['trajectory_id']
+                    print(f"[Bridge] Started trajectory {trajectory_id} ({result['total_waypoints']} waypoints)")
+
+                    # Return trajectory_id for status polling
+                    result = {
+                        'success': True,
+                        'trajectory_id': trajectory_id,
+                        'status': 'started',
+                        'total_waypoints': result['total_waypoints']
+                    }
             else:
                 result = {
                     'success': False,
@@ -443,6 +451,61 @@ async def handle_camera_info(request: web.Request) -> web.Response:
         **info
     })
 
+async def handle_trajectory_status(request: web.Request) -> web.Response:
+    """Get status of trajectory execution."""
+    global arm_controller
+
+    trajectory_id = request.match_info.get('trajectory_id')
+
+    if not trajectory_id:
+        return web.json_response({
+            'success': False,
+            'error': 'Missing trajectory_id parameter'
+        }, status=400)
+
+    if arm_controller and arm_controller.initialized:
+        status = arm_controller.get_trajectory_status(trajectory_id)
+        return web.json_response(status)
+    else:
+        return web.json_response({
+            'success': False,
+            'error': 'Arm controller not initialized'
+        }, status=503)
+
+async def handle_cancel_trajectory(request: web.Request) -> web.Response:
+    """Cancel trajectory execution."""
+    global arm_controller
+
+    trajectory_id = request.match_info.get('trajectory_id')
+
+    if not trajectory_id:
+        return web.json_response({
+            'success': False,
+            'error': 'Missing trajectory_id parameter'
+        }, status=400)
+
+    if arm_controller and arm_controller.initialized:
+        result = arm_controller.cancel_trajectory(trajectory_id)
+        return web.json_response(result)
+    else:
+        return web.json_response({
+            'success': False,
+            'error': 'Arm controller not initialized'
+        }, status=503)
+
+async def handle_list_trajectories(request: web.Request) -> web.Response:
+    """List all tracked trajectories (active and completed)."""
+    global arm_controller
+
+    if arm_controller and arm_controller.initialized:
+        result = arm_controller.list_trajectories()
+        return web.json_response(result)
+    else:
+        return web.json_response({
+            'success': False,
+            'error': 'Arm controller not initialized'
+        }, status=503)
+
 async def handle_status(request: web.Request) -> web.Response:
     """Simple status endpoint to check if bridge is running."""
     global gripper_controller, arm_controller, camera_controller
@@ -525,6 +588,7 @@ def make_app() -> web.Application:
     """Create the aiohttp application."""
     app = web.Application()
     
+    
     # Setup CORS for browser access
     cors = setup(app, defaults={
         '*': ResourceOptions(
@@ -540,6 +604,11 @@ def make_app() -> web.Application:
     app.router.add_get('/status', handle_status)
     app.router.add_get('/camera/{camera_name}/frame', handle_camera_frame)
     app.router.add_get('/camera/info', handle_camera_info)
+
+    # Trajectory management routes
+    app.router.add_get('/trajectory/{trajectory_id}/status', handle_trajectory_status)
+    app.router.add_post('/trajectory/{trajectory_id}/cancel', handle_cancel_trajectory)
+    app.router.add_get('/trajectories', handle_list_trajectories)
     
     # Add CORS to routes
     for route in list(app.router.routes()):
