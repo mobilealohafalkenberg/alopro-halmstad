@@ -30,11 +30,13 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from gripper_controller import GripperController
 from arm_controller import ArmController
 from camera_controller import CameraController
+from vision_controller import VisionController
 
 # Global controller instances
 gripper_controller = None
 arm_controller = None
 camera_controller = None
+vision_controller = None
 launch_process = None
 
 # Global operation tracking
@@ -383,7 +385,7 @@ async def execute_trajectory(operation_id: str, args: dict):
 
 async def initialize_robot():
     """Initialize the robot on startup."""
-    global gripper_controller, arm_controller, camera_controller, launch_process
+    global gripper_controller, arm_controller, camera_controller, vision_controller, launch_process
 
     print("[Bridge] Starting robot driver...")
 
@@ -472,6 +474,20 @@ async def initialize_robot():
             print("[Bridge] Camera feeds will not be available")
     except Exception as e:
         print(f"[Bridge] ✗ Error initializing cameras: {e}")
+
+    # Initialize vision controller (requires GEMINI_API_KEY)
+    print("[Bridge] Initializing vision controller...")
+    try:
+        gemini_key = os.environ.get('GEMINI_API_KEY')
+        if gemini_key:
+            vision_controller = VisionController(api_key=gemini_key)
+            print("[Bridge] ✓ Vision controller initialized with Gemini API")
+        else:
+            print("[Bridge] ⚠️  GEMINI_API_KEY not found - vision features will use placeholders")
+            print("[Bridge]    Set GEMINI_API_KEY environment variable to enable real computer vision")
+    except Exception as e:
+        print(f"[Bridge] ✗ Error initializing vision controller: {e}")
+        print("[Bridge] Vision features will use placeholder responses")
 
 
 # ============================================================================
@@ -625,50 +641,191 @@ async def handle_tool_call(request: web.Request) -> web.Response:
         # ============ PLACEHOLDER OPERATIONS ============
 
         elif name == 'detect_and_target_object':
-            # Visual object detection (placeholder for now)
+            # Visual object detection using Gemini API
             object_desc = args.get('object_description', '')
+            action = args.get('action', 'approach')
+            approach_height = args.get('approach_height', 0.05)
 
-            result = {
-                'success': True,
-                'object_found': True,
-                'object_description': object_desc,
-                'suggested_trajectory': [
-                    {'point': [0.3, 0.0, 0.25], 'label': 'approach'},
-                    {'point': [0.3, 0.0, 0.15], 'label': 'target'}
-                ],
-                'note': 'Visual detection placeholder - using default trajectory'
-            }
             print(f"[Bridge] 👁️ Object detection for: {object_desc}")
 
-            return web.json_response({
-                'success': True,
-                'result': result,
-                'call_id': call_id
-            })
+            # Check if we have all required components
+            if not camera_controller or not camera_controller.initialized:
+                result = {
+                    'success': False,
+                    'error': 'Camera controller not initialized',
+                    'object_found': False
+                }
+                return web.json_response({'success': False, 'result': result, 'call_id': call_id})
+
+            if not vision_controller:
+                # Fallback to placeholder if vision not available
+                print("[Bridge] ⚠️  Vision controller not available, using placeholder")
+                result = {
+                    'success': True,
+                    'object_found': True,
+                    'object_description': object_desc,
+                    'suggested_trajectory': [
+                        {'point': [0.3, 0.0, 0.25], 'label': 'approach', 'gripper_action': 'open'},
+                        {'point': [0.3, 0.0, 0.15], 'label': 'target', 'gripper_action': 'close'}
+                    ],
+                    'note': 'Visual detection placeholder - GEMINI_API_KEY not set'
+                }
+                return web.json_response({'success': True, 'result': result, 'call_id': call_id})
+
+            try:
+                # Get RGB and depth frames from gripper camera
+                rgb_frame, depth_frame = camera_controller.get_rgbd_frames('gripper_cam')
+
+                if rgb_frame is None:
+                    result = {
+                        'success': False,
+                        'error': 'No camera frame available',
+                        'object_found': False
+                    }
+                    return web.json_response({'success': False, 'result': result, 'call_id': call_id})
+
+                # Run object detection with Gemini API
+                detection_result = vision_controller.detect_object(
+                    rgb_frame,
+                    depth_frame,
+                    object_desc,
+                    camera_name='gripper_cam'
+                )
+
+                if not detection_result.get('object_found'):
+                    # Object not found
+                    print(f"[Bridge] ✗ Object '{object_desc}' not found in frame")
+                    return web.json_response({
+                        'success': True,
+                        'result': detection_result,
+                        'call_id': call_id
+                    })
+
+                # Object found! Generate trajectory based on 3D position
+                if 'position_3d' in detection_result:
+                    target_pos = detection_result['position_3d']
+                    x, y, z = target_pos
+
+                    # Generate approach trajectory
+                    trajectory = [
+                        {
+                            'point': [x, y, z + approach_height],
+                            'label': 'approach',
+                            'gripper_action': 'open'
+                        },
+                        {
+                            'point': [x, y, z],
+                            'label': 'target',
+                            'gripper_action': 'close' if action == 'grasp' else 'maintain'
+                        }
+                    ]
+
+                    # Add lift if grasping
+                    if action == 'grasp':
+                        trajectory.append({
+                            'point': [x, y, z + 0.1],
+                            'label': 'lift',
+                            'gripper_action': 'maintain'
+                        })
+
+                    detection_result['suggested_trajectory'] = trajectory
+                    print(f"[Bridge] ✓ Found '{object_desc}' at {target_pos}")
+                else:
+                    # Detection succeeded but no 3D position (no depth)
+                    print(f"[Bridge] ⚠️  Found '{object_desc}' but no depth data")
+                    # Use placeholder trajectory
+                    detection_result['suggested_trajectory'] = [
+                        {'point': [0.3, 0.0, 0.25], 'label': 'approach', 'gripper_action': 'open'},
+                        {'point': [0.3, 0.0, 0.15], 'label': 'target', 'gripper_action': 'close'}
+                    ]
+                    detection_result['note'] = 'Object detected but no depth data - using estimated position'
+
+                return web.json_response({
+                    'success': True,
+                    'result': detection_result,
+                    'call_id': call_id
+                })
+
+            except Exception as e:
+                print(f"[Bridge] ✗ Object detection error: {e}")
+                result = {
+                    'success': False,
+                    'error': str(e),
+                    'object_found': False,
+                    'object_description': object_desc
+                }
+                return web.json_response({'success': False, 'result': result, 'call_id': call_id})
 
         elif name == 'analyze_workspace':
-            # Workspace analysis (placeholder)
-            analysis_type = args.get('analysis_type', 'object_detection')
+            # Workspace analysis using Gemini API
+            analysis_type = args.get('analysis_type', 'objects')
 
-            camera_info = {}
-            if camera_controller and camera_controller.initialized:
-                camera_info = camera_controller.get_camera_info()
-
-            result = {
-                'success': True,
-                'analysis_type': analysis_type,
-                'camera_status': camera_info,
-                'workspace_clear': True,
-                'objects_detected': [],
-                'note': 'Workspace analysis placeholder'
-            }
             print(f"[Bridge] 🔍 Workspace analysis: {analysis_type}")
 
-            return web.json_response({
-                'success': True,
-                'result': result,
-                'call_id': call_id
-            })
+            # Check if we have required components
+            if not camera_controller or not camera_controller.initialized:
+                result = {
+                    'success': False,
+                    'error': 'Camera controller not initialized'
+                }
+                return web.json_response({'success': False, 'result': result, 'call_id': call_id})
+
+            camera_info = camera_controller.get_camera_info()
+
+            if not vision_controller:
+                # Fallback to placeholder
+                print("[Bridge] ⚠️  Vision controller not available, using placeholder")
+                result = {
+                    'success': True,
+                    'analysis_type': analysis_type,
+                    'camera_status': camera_info,
+                    'workspace_clear': True,
+                    'objects_detected': [],
+                    'note': 'Workspace analysis placeholder - GEMINI_API_KEY not set'
+                }
+                return web.json_response({'success': True, 'result': result, 'call_id': call_id})
+
+            try:
+                # Get frames from top camera (better view of workspace)
+                rgb_frame, depth_frame = camera_controller.get_rgbd_frames('top_cam')
+
+                if rgb_frame is None:
+                    # Try gripper camera as fallback
+                    rgb_frame, depth_frame = camera_controller.get_rgbd_frames('gripper_cam')
+
+                if rgb_frame is None:
+                    result = {
+                        'success': False,
+                        'error': 'No camera frame available'
+                    }
+                    return web.json_response({'success': False, 'result': result, 'call_id': call_id})
+
+                # Run workspace analysis with Gemini API
+                analysis_result = vision_controller.analyze_workspace(
+                    rgb_frame,
+                    depth_frame,
+                    analysis_type
+                )
+
+                # Add camera status
+                analysis_result['camera_status'] = camera_info
+
+                print(f"[Bridge] ✓ Workspace analysis complete")
+
+                return web.json_response({
+                    'success': True,
+                    'result': analysis_result,
+                    'call_id': call_id
+                })
+
+            except Exception as e:
+                print(f"[Bridge] ✗ Workspace analysis error: {e}")
+                result = {
+                    'success': False,
+                    'error': str(e),
+                    'analysis_type': analysis_type
+                }
+                return web.json_response({'success': False, 'result': result, 'call_id': call_id})
 
         elif name == 'emergency_stop':
             # Emergency stop - execute immediately
@@ -1013,7 +1170,7 @@ async def handle_status(request: web.Request) -> web.Response:
 
 async def cleanup(app):
     """Cleanup on shutdown."""
-    global gripper_controller, arm_controller, camera_controller, launch_process, executor
+    global gripper_controller, arm_controller, camera_controller, vision_controller, launch_process, executor
 
     print("\n[Bridge] Shutting down...")
 

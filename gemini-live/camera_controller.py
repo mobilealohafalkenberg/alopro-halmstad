@@ -24,11 +24,12 @@ class CameraController:
         self.configs = {}
         self.cameras = {}
         self.frames = {}
+        self.depth_frames = {}  # Store depth frames separately
         self.frame_locks = {}
         self.capture_threads = {}
         self.running = False
         self.initialized = False
-        
+
         # Camera configuration
         self.camera_config = {
             'resolution': (640, 480),
@@ -79,11 +80,22 @@ class CameraController:
                 
                 # Configure the specific device
                 config.enable_device(serial)
+
+                # Enable color stream
                 config.enable_stream(
                     rs.stream.color,
                     self.camera_config['resolution'][0],
                     self.camera_config['resolution'][1],
                     self.camera_config['format'],
+                    self.camera_config['fps']
+                )
+
+                # Enable depth stream (for 3D positioning)
+                config.enable_stream(
+                    rs.stream.depth,
+                    self.camera_config['resolution'][0],
+                    self.camera_config['resolution'][1],
+                    rs.format.z16,  # 16-bit depth values
                     self.camera_config['fps']
                 )
                 
@@ -96,6 +108,7 @@ class CameraController:
                     self.configs[name] = config
                     self.cameras[name] = serial
                     self.frames[name] = None
+                    self.depth_frames[name] = None
                     self.frame_locks[name] = threading.Lock()
                     
                     print(f"[CameraController] ✓ {name} initialized")
@@ -187,14 +200,24 @@ class CameraController:
                     # RealSense camera
                     frames = pipeline.wait_for_frames(timeout_ms=1000)
                     color_frame = frames.get_color_frame()
-                    
+                    depth_frame = frames.get_depth_frame()
+
                     if color_frame:
-                        # Convert to numpy array
+                        # Convert RGB to numpy array
                         frame = np.asanyarray(color_frame.get_data())
-                        
-                        # Store frame
+
+                        # Convert depth to numpy array (in meters)
+                        depth_array = None
+                        if depth_frame:
+                            # Get depth data as uint16 (millimeters)
+                            depth_mm = np.asanyarray(depth_frame.get_data())
+                            # Convert to meters (float32)
+                            depth_array = depth_mm.astype(np.float32) / 1000.0
+
+                        # Store frames atomically
                         with self.frame_locks[camera_name]:
                             self.frames[camera_name] = frame
+                            self.depth_frames[camera_name] = depth_array
                 else:
                     # USB camera (OpenCV)
                     ret, frame = pipeline.read()
@@ -214,19 +237,53 @@ class CameraController:
     def get_frame(self, camera_name: str) -> Optional[np.ndarray]:
         """
         Get the latest frame from a camera.
-        
+
         Args:
             camera_name: Name of the camera
-            
+
         Returns:
             RGB frame as numpy array or None
         """
         if camera_name not in self.frames:
             return None
-        
+
         with self.frame_locks[camera_name]:
             return self.frames[camera_name].copy() if self.frames[camera_name] is not None else None
-    
+
+    def get_depth_frame(self, camera_name: str) -> Optional[np.ndarray]:
+        """
+        Get the latest depth frame from a camera.
+
+        Args:
+            camera_name: Name of the camera
+
+        Returns:
+            Depth frame as numpy array (float32, in meters) or None
+        """
+        if camera_name not in self.depth_frames:
+            return None
+
+        with self.frame_locks[camera_name]:
+            return self.depth_frames[camera_name].copy() if self.depth_frames[camera_name] is not None else None
+
+    def get_rgbd_frames(self, camera_name: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Get both RGB and depth frames atomically.
+
+        Args:
+            camera_name: Name of the camera
+
+        Returns:
+            Tuple of (rgb_frame, depth_frame) or (None, None)
+        """
+        if camera_name not in self.frames:
+            return None, None
+
+        with self.frame_locks[camera_name]:
+            rgb = self.frames[camera_name].copy() if self.frames[camera_name] is not None else None
+            depth = self.depth_frames[camera_name].copy() if self.depth_frames[camera_name] is not None else None
+            return rgb, depth
+
     def get_frame_base64(self, camera_name: str, quality: int = 85) -> Optional[str]:
         """
         Get frame as base64-encoded JPEG.
