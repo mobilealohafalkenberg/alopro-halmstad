@@ -21,13 +21,15 @@ class VisionController:
     Uses Gemini API for object detection and RealSense depth data for 3D positioning.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, calibration_file: Optional[str] = None):
         """
         Initialize vision controller with Gemini API.
 
         Args:
             api_key: Gemini API key (or set GEMINI_API_KEY env var)
+            calibration_file: Path to calibration file (JSON)
         """
+
         self.api_key = api_key or os.environ.get('GEMINI_API_KEY')
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not provided. Set via env var or constructor.")
@@ -38,17 +40,41 @@ class VisionController:
         # Use Gemini 2.0 Flash for vision (fast and accurate)
         self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
 
-        # Camera intrinsics (RealSense D405 - 640x480)
-        # These are approximate - calibrate for better accuracy
-        self.fx = 460.0  # Focal length X (pixels)
-        self.fy = 460.0  # Focal length Y (pixels)
-        self.cx = 320.0  # Principal point X (image center)
-        self.cy = 240.0  # Principal point Y (image center)
+        # Default camera intrinsics (RealSense D405 - 640x480)
+        self.intrinsics = {
+            'gripper_cam': {
+                'fx': 460.0,  # Focal length X (pixels)
+                'fy': 460.0,  # Focal length Y (pixels)
+                'cx': 320.0,  # Principal point X (image center)
+                'cy': 240.0,  # Principal point Y (image center)
+            },
+            'top_cam': {
+                'fx': 460.0,
+                'fy': 460.0,
+                'cx': 320.0,
+                'cy': 240.0,
+            }
+        }
 
-        # Camera-to-robot transform (gripper camera)
-        # These need to be calibrated for your specific setup
-        self.camera_to_robot_offset = np.array([0.15, 0.0, 0.05])  # [x, y, z] in meters
-        self.camera_rotation = 0  # Rotation around Z axis (radians)
+        # Default camera-to-robot transforms
+        self.camera_transforms = {
+            'gripper_cam': {
+                'offset': np.array([0.15, 0.0, 0.05]),  # [x, y, z] in meters
+                'rotation': 0,  # Rotation around Z axis (radians)
+            },
+            'top_cam': {
+                'offset': np.array([0.0, 0.0, 0.5]),  # Top camera above workspace
+                'rotation': 0,
+            }
+        }
+
+        # Load calibration if file provided
+        if calibration_file and os.path.exists(calibration_file):
+            self.load_calibration(calibration_file)
+            print(f"[VisionController] Loaded calibration from {calibration_file}")
+        else:
+            print("[VisionController] ⚠️ Using default (uncalibrated) camera parameters")
+            print("[VisionController] Run calibration script for accurate 3D positioning")
 
         print("[VisionController] Initialized with Gemini 2.0 Flash")
 
@@ -282,10 +308,10 @@ Be precise with the bounding box - it should tightly contain the object."""
 
     def _calculate_3d_position(
         self,
-        pixel_coords: Tuple[int, int],
-        depth_frame: np.ndarray,
-        camera_name: str
-    ) -> Tuple[List[float], float]:
+        pixel_coords,
+        depth_frame,
+        camera_name,
+    ):
         """
         Convert 2D pixel + depth to 3D position in robot coordinates.
 
@@ -298,6 +324,13 @@ Be precise with the bounding box - it should tightly contain the object."""
             (position_3d, depth_meters) where position_3d is [x, y, z] in robot frame
         """
         u, v = pixel_coords
+
+        # Get camera intrinsics
+        intrinsics = self.intrinsics.get(camera_name, self.intrinsics['gripper_cam'])
+        fx = intrinsics['fx']
+        fy = intrinsics['fy']
+        cx = intrinsics['cx']
+        cy = intrinsics['cy']
 
         # Get depth at this pixel (with small window average for robustness)
         window_size = 5
@@ -320,9 +353,14 @@ Be precise with the bounding box - it should tightly contain the object."""
 
         # Convert pixel + depth to 3D point in camera frame
         # Using pinhole camera model: X = (u - cx) * Z / fx
-        x_cam = (u - self.cx) * depth_meters / self.fx
-        y_cam = (v - self.cy) * depth_meters / self.fy
+        x_cam = (u - cx) * depth_meters / fx
+        y_cam = (v - cy) * depth_meters / fy
         z_cam = depth_meters
+
+        # Get camera transform
+        transform = self.camera_transforms.get(camera_name, self.camera_transforms['gripper_cam'])
+        offset = transform['offset']
+        rotation = transform['rotation']
 
         # Transform from camera frame to robot frame
         # This depends on camera mounting position
@@ -331,18 +369,18 @@ Be precise with the bounding box - it should tightly contain the object."""
             # Camera X (right) → Robot Y (right)
             # Camera Y (down) → Robot Z (down)
             # Camera Z (forward) → Robot X (forward)
-            x_robot = z_cam + self.camera_to_robot_offset[0]
-            y_robot = x_cam + self.camera_to_robot_offset[1]
-            z_robot = -y_cam + self.camera_to_robot_offset[2]
+            x_robot = z_cam + offset[0]
+            y_robot = x_cam + offset[1]
+            z_robot = -y_cam + offset[2]
 
         elif camera_name == 'top_cam':
             # Top camera: mounted above looking down
             # Camera X (right) → Robot Y (right)
             # Camera Y (down) → Robot X (forward)
             # Camera Z (forward) → Robot -Z (down)
-            x_robot = y_cam + self.camera_to_robot_offset[0]
-            y_robot = x_cam + self.camera_to_robot_offset[1]
-            z_robot = -z_cam + self.camera_to_robot_offset[2]
+            x_robot = y_cam + offset[0]
+            y_robot = x_cam + offset[1]
+            z_robot = -z_cam + offset[2]
 
         else:
             # Unknown camera, use identity
@@ -487,7 +525,8 @@ Respond in JSON format:
         self,
         known_object_pixel: Tuple[int, int],
         known_object_position: Tuple[float, float, float],
-        depth_frame: np.ndarray
+        depth_frame: np.ndarray,
+        camera_name: str = 'gripper_cam'
     ):
         """
         Calibrate camera-to-robot transform using a known object.
@@ -496,26 +535,104 @@ Respond in JSON format:
             known_object_pixel: (u, v) pixel coordinates of known object
             known_object_position: (x, y, z) actual position in robot frame
             depth_frame: Depth frame
+            camera_name: Which camera to calibrate
         """
         # Calculate what the position would be with current calibration
         calculated_pos, _ = self._calculate_3d_position(
             known_object_pixel,
             depth_frame,
-            'gripper_cam'
+            camera_name
         )
 
         # Calculate offset error
         offset_error = np.array(known_object_position) - np.array(calculated_pos)
 
-        print(f"[VisionController] Calibration:")
+        print(f"[VisionController] Calibration for {camera_name}:")
         print(f"  Expected: {known_object_position}")
         print(f"  Calculated: {calculated_pos}")
         print(f"  Offset error: {offset_error}")
-        print(f"  Suggested camera_to_robot_offset: {self.camera_to_robot_offset + offset_error}")
+
+        # Get current offset
+        current_offset = self.camera_transforms[camera_name]['offset']
+        new_offset = current_offset + offset_error
+
+        print(f"  Current offset: {current_offset}")
+        print(f"  New offset: {new_offset}")
 
         # Update offset
-        self.camera_to_robot_offset += offset_error
-        print(f"[VisionController] ✓ Calibration updated")
+        self.camera_transforms[camera_name]['offset'] = new_offset
+        print(f"[VisionController] ✓ Calibration updated for {camera_name}")
+
+    def save_calibration(self, filepath: str):
+        """
+        Save current calibration to JSON file.
+
+        Args:
+            filepath: Path to save calibration file
+        """
+        calibration_data = {
+            'intrinsics': {},
+            'transforms': {}
+        }
+
+        # Convert numpy arrays to lists for JSON serialization
+        for cam_name, intrinsic in self.intrinsics.items():
+            calibration_data['intrinsics'][cam_name] = intrinsic.copy()
+
+        for cam_name, transform in self.camera_transforms.items():
+            calibration_data['transforms'][cam_name] = {
+                'offset': transform['offset'].tolist(),
+                'rotation': float(transform['rotation'])
+            }
+
+        with open(filepath, 'w') as f:
+            json.dump(calibration_data, f, indent=2)
+
+        print(f"[VisionController] ✓ Calibration saved to {filepath}")
+
+    def load_calibration(self, filepath: str):
+        """
+        Load calibration from JSON file.
+
+        Args:
+            filepath: Path to calibration file
+        """
+        with open(filepath, 'r') as f:
+            calibration_data = json.load(f)
+
+        # Load intrinsics
+        if 'intrinsics' in calibration_data:
+            self.intrinsics = calibration_data['intrinsics']
+
+        # Load transforms (convert lists back to numpy arrays)
+        if 'transforms' in calibration_data:
+            for cam_name, transform in calibration_data['transforms'].items():
+                self.camera_transforms[cam_name] = {
+                    'offset': np.array(transform['offset']),
+                    'rotation': transform['rotation']
+                }
+
+        print(f"[VisionController] ✓ Calibration loaded from {filepath}")
+
+    def get_calibration_info(self) -> Dict:
+        """
+        Get current calibration parameters.
+
+        Returns:
+            Dictionary with current calibration settings
+        """
+        info = {
+            'intrinsics': self.intrinsics.copy(),
+            'transforms': {}
+        }
+
+        for cam_name, transform in self.camera_transforms.items():
+            info['transforms'][cam_name] = {
+                'offset': transform['offset'].tolist(),
+                'rotation': float(transform['rotation'])
+            }
+
+        return info
 
 
 # Test script

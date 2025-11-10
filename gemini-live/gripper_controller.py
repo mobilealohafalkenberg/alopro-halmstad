@@ -217,19 +217,20 @@ class GripperController:
 
         return self.get_gripper_state()
     
-    def close_gripper(self, blocking: bool = True) -> Dict:
+    def close_gripper(self, blocking: bool = True, verify_grasp: bool = False) -> Dict:
         """
-        Close the gripper.
+        Close the gripper with optional grasp verification.
 
         Args:
             blocking: If True, wait for movement to complete
+            verify_grasp: If True, check if object was actually grasped
 
         Returns:
-            Dictionary with status and gripper position
+            Dictionary with status, gripper position, and grasp verification
         """
         if not self.initialized:
             return {"success": False, "error": "Not initialized", "state": "unknown"}
-
+      
         # Check if system is in ERROR state (e.g., after emergency stop)
         with self.state_lock:
             if self.current_state == GripperState.ERROR:
@@ -240,24 +241,13 @@ class GripperController:
 
         print("[GripperController] Closing gripper...")
 
-        # Dry-run mode: Simulate movement
-        if self.dry_run:
-            if blocking:
-                time.sleep(0.1)  # Simulate brief movement
-                with self.state_lock:
-                    self.gripper_position = FOLLOWER_GRIPPER_JOINT_CLOSE
-                    self.current_state = GripperState.CLOSED
-            print("[GripperController] 🔧 DRY-RUN: Simulated gripper close")
-        else:
-            # Hardware mode: Execute real movement
-            move_grippers([self.bot], [FOLLOWER_GRIPPER_JOINT_CLOSE], moving_time=1.0)
-
-            if blocking:
-                time.sleep(1.0)
-                with self.state_lock:
-                    self.current_state = GripperState.CLOSED
-
-        return self.get_gripper_state()
+        result = self.get_gripper_state()  
+        # Verify grasp if requested
+        if verify_grasp and blocking:
+            grasp_check = self.verify_grasp()
+            result.update(grasp_check)
+        
+        return result
     
     def get_gripper_state(self) -> Dict:
         """
@@ -353,7 +343,124 @@ class GripperController:
                 time.sleep(1.0)
 
         return self.get_gripper_state()
+    def verify_grasp(self) -> Dict:
+        """
+        Verify if an object is actually grasped.
 
+        Uses multiple methods:
+        1. Position check: Gripper should not close fully if object is held
+        2. Current check: Motor current should be elevated if holding object
+        3. Stability check: Position should be stable (not drifting)
+
+        Returns:
+        Dictionary with:
+        - object_grasped: bool - True if object detected in gripper
+        - grasp_verified: bool - True if verification succeeded
+        - confidence: float - Confidence level (0.0-1.0)
+        - method: str - Verification method used
+        - details: dict - Detailed measurements
+        """
+        if not self.initialized:
+            return {
+                "object_grasped": False,
+                "grasp_verified": False,
+                "error": "Not initialized"
+            }
+
+        # Dry-run mode: Always return successful grasp
+        if self.dry_run:
+            return {
+                "object_grasped": True,
+                "grasp_verified": True,
+                "confidence": 1.0,
+                "method": "dry_run_simulation",
+                "details": {"note": "Dry-run mode - simulated grasp"}
+            }
+
+        try:
+            # Get current gripper position and motor current
+            with self.bot.core.js_mutex:
+                gripper_index = self.bot.gripper.left_finger_index
+                current_position = self.bot.core.joint_states.position[gripper_index]
+                motor_current = abs(self.bot.core.joint_states.current[gripper_index])  # mA
+
+            # Method 1: Position-based detection
+            # If gripper commanded to close but stopped before fully closed,
+            # something is likely in the gripper
+            FULLY_CLOSED_THRESHOLD = FOLLOWER_GRIPPER_JOINT_CLOSE + 0.05
+            OPEN_ENOUGH_FOR_OBJECT = FOLLOWER_GRIPPER_JOINT_CLOSE + 0.15
+
+            position_indicates_grasp = (
+                current_position > FULLY_CLOSED_THRESHOLD and
+                current_position < OPEN_ENOUGH_FOR_OBJECT
+            )
+
+            # Method 2: Current-based detection
+            # Motor current should be elevated when holding an object
+            GRASP_CURRENT_THRESHOLD = 100  # mA - adjust based on testing
+            EMPTY_CURRENT_THRESHOLD = 50   # mA - typical empty gripper current
+
+            current_indicates_grasp = motor_current > GRASP_CURRENT_THRESHOLD
+            # Method 3: Stability check
+            # Wait a moment and check if position is stable
+            time.sleep(0.2)
+            with self.bot.core.js_mutex:
+                position_after = self.bot.core.joint_states.position[gripper_index]
+
+            position_stable = abs(position_after - current_position) < 0.02
+
+            # Combine methods for confidence score
+            confidence_score = 0.0
+            methods_positive = []
+
+            if position_indicates_grasp:
+                confidence_score += 0.5
+                methods_positive.append("position")
+
+            if current_indicates_grasp:
+                confidence_score += 0.4
+                methods_positive.append("current")
+
+            if position_stable:
+                confidence_score += 0.1
+                methods_positive.append("stability")
+
+            # Decision: Consider grasped if confidence > 0.5
+            object_grasped = confidence_score >= 0.5
+
+            result = {
+                "object_grasped": object_grasped,
+                "grasp_verified": True,
+                "confidence": confidence_score,
+                "method": "multi_sensor",
+                "details": {
+                    "position": current_position,
+                    "position_indicates_grasp": position_indicates_grasp,
+                    "motor_current_mA": motor_current,
+                    "current_indicates_grasp": current_indicates_grasp,
+                    "position_stable": position_stable,
+                    "methods_positive": methods_positive
+                }
+            }
+
+            if object_grasped:
+                print(f"[GripperController] ✓ Object grasped (confidence: {confidence_score:.2f})")
+                print(f"[GripperController]   Position: {current_position:.3f} rad, Current: {motor_current:.1f} mA")
+            else:
+                print(f"[GripperController] ✗ No object detected (confidence: {confidence_score:.2f})")
+                print(f"[GripperController]   Position: {current_position:.3f} rad, Current: {motor_current:.1f} mA")
+
+            return result
+
+        except Exception as e:
+            print(f"[GripperController] ✗ Grasp verification error: {e}")
+            return {
+                "object_grasped": False,
+                "grasp_verified": False,
+                "error": str(e),
+                "confidence": 0.0
+            }
+        
     def emergency_stop(self) -> Dict:
         """
         Emergency stop - immediately disable torque on gripper and enter ERROR state.

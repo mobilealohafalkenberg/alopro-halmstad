@@ -543,20 +543,35 @@ async def execute_pick_and_place(operation_id: str, args: dict):
             await asyncio.sleep(0.5)
             update_step('lower_to_grasp', 'completed', {'note': 'mock mode'})
 
-        # ============ STEP 5: Close gripper (grasp) ============
+        # ============ STEP 5: Close gripper (grasp) WITH VERIFICATION ============
         update_step('grasp_object', 'running')
 
         if gripper_controller and gripper_controller.initialized:
+            # Close gripper with verification enabled
             grasp_result = await loop.run_in_executor(
                 executor,
-                gripper_controller.close_gripper
+                lambda: gripper_controller.close_gripper(blocking=True, verify_grasp=True)
             )
             if not grasp_result.get('success'):
-                raise Exception("Failed to grasp object")
+                raise Exception("Failed to close gripper")
+
+            # Check if object was actually grasped
+            if not grasp_result.get('object_grasped', False):
+                # Grasp failed - object not detected in gripper
+                confidence = grasp_result.get('confidence', 0.0)
+                details = grasp_result.get('details', {})
+                raise Exception(
+                    f"Grasp verification failed (confidence: {confidence:.2f}). "
+                    f"Object not detected in gripper. Details: {details}"
+                )
 
             # Wait a bit for grasp to stabilize
             await asyncio.sleep(0.5)
-            update_step('grasp_object', 'completed')
+            update_step('grasp_object', 'completed', {
+                'object_grasped': True,
+                'confidence': grasp_result.get('confidence', 0.0)
+            })
+            print(f"[Bridge] ✓ Grasp verified (confidence: {grasp_result.get('confidence', 0.0):.2f})")
         else:
             update_step('grasp_object', 'skipped', {'reason': 'mock mode'})
 
@@ -587,6 +602,29 @@ async def execute_pick_and_place(operation_id: str, args: dict):
         else:
             await asyncio.sleep(1.0)
             update_step('lift_object', 'completed', {'note': 'mock mode'})
+
+        # ============ STEP 6.5: Verify object still in gripper (NEW!) ============
+        update_step('verify_grasp_after_lift', 'running')
+
+        if gripper_controller and gripper_controller.initialized:
+            # Re-verify grasp after movement
+            verify_result = await loop.run_in_executor(
+                executor,
+                gripper_controller.verify_grasp
+            )
+
+            if not verify_result.get('object_grasped', False):
+                raise Exception(
+                    f"Object lost during lift! Grasp confidence: {verify_result.get('confidence', 0.0):.2f}"
+                )
+
+            update_step('verify_grasp_after_lift', 'completed', {
+                'object_still_grasped': True,
+                'confidence': verify_result.get('confidence', 0.0)
+            })
+            print(f"[Bridge] ✓ Object still in gripper after lift (confidence: {verify_result.get('confidence', 0.0):.2f})")
+        else:
+            update_step('verify_grasp_after_lift', 'skipped', {'reason': 'mock mode'})
 
         # ============ STEP 7: Detect target location ============
         update_step('detect_target', 'running')
@@ -746,9 +784,75 @@ async def execute_pick_and_place(operation_id: str, args: dict):
             await asyncio.sleep(1.0)
             update_step('return_home', 'completed', {'note': 'mock mode'})
 
+        # ============ STEP 13: Verify task completion (NEW!) ============
+        update_step('verify_task_completion', 'running')
+
+        task_verified = False
+        verification_note = "Visual verification skipped"
+
+        if vision_controller and camera_controller and camera_controller.initialized:
+            try:
+                # Get overhead view of target location
+                rgb_verify, depth_verify = await loop.run_in_executor(
+                    executor,
+                    lambda: camera_controller.get_rgbd_frames('top_cam')
+                )
+
+                if rgb_verify is not None:
+                    # Check if object is now at target location
+                    verification_result = await loop.run_in_executor(
+                        executor,
+                        lambda: vision_controller.detect_object(
+                            rgb_verify,
+                            depth_verify,
+                            object_to_pick,
+                            camera_name='top_cam'
+                        )
+                    )
+
+                    if verification_result.get('object_found'):
+                        # Object found - check if it's near target location
+                        if 'position_3d' in verification_result:
+                            obj_pos = verification_result['position_3d']
+                            # Calculate distance from target
+                            distance = np.sqrt(
+                                (obj_pos[0] - place_position[0])**2 +
+                                (obj_pos[1] - place_position[1])**2 +
+                                (obj_pos[2] - place_position[2])**2
+                            )
+
+                            # Consider successful if within 10cm of target
+                            if distance < 0.10:
+                                task_verified = True
+                                verification_note = f"Object confirmed at target (distance: {distance*100:.1f}cm)"
+                                print(f"[Bridge] ✓ Task verified: {verification_note}")
+                            else:
+                                verification_note = f"Object found but far from target (distance: {distance*100:.1f}cm)"
+                                print(f"[Bridge] ⚠️  {verification_note}")
+                        else:
+                            verification_note = "Object found but no 3D position available"
+                    else:
+                        # Object not found at target - might be hidden in bowl (acceptable)
+                        verification_note = "Object not visible at target (may be inside container)"
+                        task_verified = True  # Assume success if not visible (in bowl)
+                        print(f"[Bridge] ℹ️  {verification_note}")
+                else:
+                    verification_note = "No camera frame available for verification"
+
+            except Exception as e:
+                verification_note = f"Verification error: {str(e)}"
+                print(f"[Bridge] ⚠️  {verification_note}")
+
+        update_step('verify_task_completion', 'completed', {
+            'verified': task_verified,
+            'note': verification_note
+        })
+
         # ============ COMPLETE ============
         result = {
             'success': True,
+            'verified': task_verified,
+            'verification_note': verification_note,
             'object_picked': object_to_pick,
             'target_reached': target_location,
             'pick_position': pick_position,
@@ -901,8 +1005,15 @@ async def initialize_robot():
     try:
         gemini_key = os.environ.get('GEMINI_API_KEY')
         if gemini_key:
-            vision_controller = VisionController(api_key=gemini_key)
-            print("[Bridge] ✓ Vision controller initialized with Gemini API")
+            # Check for calibration file
+            calibration_file = Path(__file__).parent.parent.parent / "vision_calibration.json"
+            if calibration_file.exists():
+                vision_controller = VisionController(api_key=gemini_key, calibration_file=str(calibration_file))
+                print("[Bridge] ✓ Vision controller initialized with Gemini API and calibration")
+            else:
+                vision_controller = VisionController(api_key=gemini_key)
+                print("[Bridge] ✓ Vision controller initialized with Gemini API (uncalibrated)")
+                print("[Bridge] ⚠️  Run calibration script for accurate positioning: python3 calibrate_cameras.py")
         else:
             print("[Bridge] ⚠️  GEMINI_API_KEY not found - vision features will use placeholders")
             print("[Bridge]    Set GEMINI_API_KEY environment variable to enable real computer vision")

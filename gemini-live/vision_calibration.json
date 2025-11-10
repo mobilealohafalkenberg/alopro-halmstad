@@ -1,0 +1,26 @@
+{
+  "intrinsics": {
+    "gripper_cam": {
+      "fx": 460.0,
+      "fy": 460.0,
+      "cx": 320.0,
+      "cy": 240.0
+    },
+    "top_cam": {
+      "fx": 460.0,
+      "fy": 460.0,
+      "cx": 320.0,
+      "cy": 240.0
+    }
+  },
+  "transforms": {
+    "gripper_cam": {
+      "offset": [0.15, 0.0, 0.05],
+      "rotation": 0
+    },
+    "top_cam": {
+      "offset": [0.0, 0.0, 0.5],
+      "rotation": 0
+    }
+  }
+}
