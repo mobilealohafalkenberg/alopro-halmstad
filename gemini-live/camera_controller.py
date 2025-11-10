@@ -231,16 +231,19 @@ class CameraController:
 
                     # Store RGB frame
                     if color_frame:
-                        # Convert to numpy array (RGB)
-                        rgb_array = np.asanyarray(color_frame.get_data())
+                        # Convert to numpy array (RGB) and make a COPY
+                        # IMPORTANT: .copy() is required! np.asanyarray() returns a VIEW
+                        # of the RealSense buffer which gets reused on next frame
+                        rgb_array = np.asanyarray(color_frame.get_data()).copy()
 
                         with self.frame_locks[camera_name]:
                             self.frames[camera_name] = rgb_array
 
                     # ← NEW: Store depth frame
                     if depth_frame:
-                        # Convert to numpy array (depth in millimeters)
-                        depth_array = np.asanyarray(depth_frame.get_data())
+                        # Convert to numpy array (depth in millimeters) and make a COPY
+                        # IMPORTANT: .copy() is required! np.asanyarray() returns a VIEW
+                        depth_array = np.asanyarray(depth_frame.get_data()).copy()
 
                         # Convert from millimeters to meters
                         depth_meters = depth_array.astype(np.float32) / 1000.0
